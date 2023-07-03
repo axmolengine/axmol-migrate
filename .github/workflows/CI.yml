@@ -49,12 +49,12 @@ jobs:
     - name: Checking out fork of project
       shell: pwsh
       run: |
-        $source_repo = ${{github.event.inputs.source_repo}}
+        $source_repo = '${{github.event.inputs.source_repo}}'
         $source_dir = Join-Path -Path $(Get-Location).Path $source_repo
         git clone https://github.com/$source_rep $source_dir
-        $source_branch = ${{github.event.inputs.source_branch}}
+        $source_branch = '${{github.event.inputs.source_branch}}'
         if ($source_branch) { git -C $source_dir checkout $source_branch }
-        git -C $source_dir checkout -b ${{github.event.inputs.migrated_branch}}
+        git -C $source_dir checkout -b '${{github.event.inputs.migrated_branch}}'
         echo "source_dir=$source_dir" >> ${env:GITHUB_ENV}
     - name:  Migrate sources
       shell: pwsh
@@ -68,9 +68,9 @@ jobs:
         $source_dir = ${env:source_dir}
         git -C $source_dir config --global user.name 'GitHub Actions'
         git -C $source_dir config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git -C $source_dir remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{github.event.inputs.source_repo}}
+        git -C $source_dir remote set-url origin 'https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{github.event.inputs.source_repo}}'
         git -C $source_dir add .
         git -C $source_dir add build.ps1 -f
         git -C $source_dir status
         git -C $source_dir commit -am "Automated migrate to axmol latest"
-        git -C $source_dir push origin ${{github.event.inputs.migrated_branch}} ${{github.event.inputs.force_push}}
+        git -C $source_dir push origin '${{github.event.inputs.migrated_branch}}' '${{github.event.inputs.force_push}}'
