@@ -4,8 +4,8 @@ Migrate exist projects of cocos2d-x or older axmol to compile with latest axmol 
 
 ## Whey needs
 
-axmol latest change remove `CC` prefix from sources files, so if exists project not include `cocos2d.h` only, or include 
-other header files of engine, you can use this tool to fast migreate your sources code includes.
+axmol latest change remove `CC` prefix from sources files, so if exist projects not include `cocos2d.h` only, or include 
+other header files of engine, you can use this tool to fast migrate your sources code includes.
 
 ## steps
 
