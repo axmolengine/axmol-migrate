@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    # Inputs the workflow accepts.
+    inputs:
+      source_repo:
+        description: 'The source repo of axmol/cocos2dx projects'
+        # Default value if no value is explicitly provided
+        default: 'halx99/OpenGD'
+        # Input has to be provided for the workflow to run
+        required: true
+      source_branch:
+        # test only
+        description: 'The source branch of source_repo'
+        # Default value if no value is explicitly provided
+        default: 'main'
+        # Input has to be provided for the workflow to run
+        required: true
+      migrated_branch:
+        description: ''
+        # Default value if no value is explicitly provided
+        default: 'axmol-latest'
+        # Input has to be provided for the workflow to run
+        required: true
+      force_push:
+        description: 'Force push to migrated_branch'
+        # Default value if no value is explicitly provided
+        default: '--force'
+        # Input has to be provided for the workflow to run
+        required: true
+
+jobs:
+  migrate:
+    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
+    # You can convert this to a matrix build if you need cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: windows-latest
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push the changed files back to the repository.
+      contents: write
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build axmol-migrate
+      shell: pwsh
+      run: |
+        ./build.ps1 -xb '--config','Release','--target','axmol-migrate'
+    - name: Checking out fork of project
+      shell: pwsh
+      run: |
+        $source_repo = ${{github.event.inputs.source_repo}}
+        $source_dir = Join-Path -Path $(Get-Location).Path $source_repo
+        git clone https://github.com/$source_rep $source_dir
+        $source_branch = ${{github.event.inputs.source_branch}}
+        if ($source_branch) { git -C $source_dir checkout $source_branch }
+        git -C $source_dir checkout -b ${{github.event.inputs.migrated_branch}}
+        echo "source_dir=$source_dir" >> ${env:GITHUB_ENV}
+    - name:  Migrate sources
+      shell: pwsh
+      run: |
+        $source_dir = ${env:source_dir}
+        ./build_x64/bin/Release/axmol-migrate --fuzzy --source-dir $source_dir
+        cp ./build.ps1 $source_dir/
+    - name: Commiting changes
+      shell: pwsh
+      run: |
+        $source_dir = ${env:source_dir}
+        git -C $source_dir config --global user.name 'GitHub Actions'
+        git -C $source_dir config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        git -C $source_dir remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{github.event.inputs.source_repo}}
+        git -C $source_dir add .
+        git -C $source_dir add build.ps1 -f
+        git -C $source_dir status
+        git -C $source_dir commit -am "Automated migrate to axmol latest"
+        git -C $source_dir push origin ${{github.event.inputs.migrated_branch}} ${{github.event.inputs.force_push}}
+s
