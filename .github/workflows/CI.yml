@@ -72,5 +72,5 @@ jobs:
         git -C $source_dir add .
         git -C $source_dir add build.ps1 -f
         git -C $source_dir status
-        git -C $source_dir commit -am "Automated migrate to axmol latest"
+        git -C $source_dir commit -m "Automated migrate to axmol latest"
         git -C $source_dir push origin '${{github.event.inputs.migrated_branch}}' '${{github.event.inputs.force_push}}'
