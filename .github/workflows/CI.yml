@@ -31,7 +31,7 @@ on:
         required: true
 
 jobs:
-  migrate:
+  migrate-to-axmol-latest:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
@@ -45,7 +45,7 @@ jobs:
     - name: Build axmol-migrate
       shell: pwsh
       run: |
-        ./build.ps1 -xb '--config','Release','--target','axmol-migrate'
+        ./build1k.ps1 -xb '--config','Release','--target','axmol-migrate'
     - name: Checking out fork of project
       shell: pwsh
       run: |
@@ -61,7 +61,7 @@ jobs:
       run: |
         $source_dir = ${env:source_dir}
         ./build_x64/bin/Release/axmol-migrate --fuzzy --source-dir $source_dir
-        cp ./build.ps1 $source_dir/
+        curl -L https://raw.githubusercontent.com/axmolengine/build1k/main/.github/workflows/dist.yml -o $source_dir/
     - name: Commiting changes
       shell: pwsh
       run: |
