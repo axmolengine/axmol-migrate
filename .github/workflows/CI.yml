@@ -68,7 +68,7 @@ jobs:
         $source_dir = ${env:source_dir}
         git -C $source_dir config --global user.name 'GitHub Actions'
         git -C $source_dir config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git -C $source_dir remote set-url origin 'https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{github.event.inputs.source_repo}}'
+        git -C $source_dir remote set-url origin 'https://x-access-token:${{ secrets.AX_MIGRATE_TOKEN }}@github.com/${{github.event.inputs.source_repo}}'
         git -C $source_dir add .
         git -C $source_dir add build.ps1 -f
         git -C $source_dir status
