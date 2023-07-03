@@ -51,7 +51,7 @@ jobs:
       run: |
         $source_repo = '${{github.event.inputs.source_repo}}'
         $source_dir = Join-Path -Path $(Get-Location).Path $source_repo
-        git clone https://github.com/$source_rep $source_dir
+        git clone "https://github.com/$source_repo" $source_dir
         $source_branch = '${{github.event.inputs.source_branch}}'
         if ($source_branch) { git -C $source_dir checkout $source_branch }
         git -C $source_dir checkout -b '${{github.event.inputs.migrated_branch}}'
