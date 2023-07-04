@@ -10,5 +10,5 @@ other header files of engine, you can use this tool to fast migrate your sources
 ## steps
 
 1. clone this repo
-2. double click the `buld.ps1` of this project
+2. double click the `build1k.ps1` of this project
 3. powershell .\build_x64\axmol-migrate --fuzzy --source-dir <path/to/your/project/>
