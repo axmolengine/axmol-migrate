@@ -60,7 +60,7 @@ jobs:
       shell: pwsh
       run: |
         $source_dir = ${env:source_dir}
-        ./build_x64/bin/Release/axmol-migrate --fuzzy --source-dir $source_dir
+        ./build_x64/bin/Release/axmol-migrate cpp --fuzzy --source-dir $source_dir
         curl -L 'https://raw.githubusercontent.com/axmolengine/axmol/dev/build.ps1' -o (Join-Path $source_dir 'build.ps1')
     - name: Commiting changes
       shell: pwsh
