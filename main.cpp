@@ -402,7 +402,16 @@ void migrate_shader_one(std::string_view inpath) {
 								context->curVarName[idx] = '.';
 							auto path = context->fileDir;
 							path += "/";
-							path += context->curVarName;
+							if (cxx20::ic::starts_with(context->curVarName, "CC2D_")) {
+								path += "2D_";
+								path += context->curVarName.substr(5);
+							}
+							else if (cxx20::ic::starts_with(context->curVarName, "CC3D_")) {
+								path += "3D_";
+								path += context->curVarName.substr(5);
+							}
+							else
+								path += context->curVarName;
 							context->curVarName.clear();
 
 							replace(shaderCode, "\\n", "\n");
