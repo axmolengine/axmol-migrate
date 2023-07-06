@@ -323,6 +323,19 @@ namespace clang {
 	DEFINE_CLANG_FUNC(getFileName);
 }
 
+int replace(std::string& string, const std::string& replaced_key, const std::string& replacing_key)
+{
+	int count = 0;
+	std::string::size_type pos = 0;
+	while ((pos = string.find(replaced_key, pos)) != std::string::npos)
+	{
+		(void)string.replace(pos, replaced_key.length(), replacing_key);
+		pos += replacing_key.length();
+		++count;
+	}
+	return count;
+}
+
 void migrate_shader_one(std::string_view inpath) {
 
 #pragma region parse code file by libclang
@@ -377,13 +390,12 @@ void migrate_shader_one(std::string_view inpath) {
 					auto cursorValue = clang::getCursorSpelling(c);
 					if (cursorKind == CXCursorKind::CXCursor_VarDecl) {
 						cursorValue = clang::getCursorSpelling(c);
-						auto pszCursorValue = clang::getCString(cursorValue);
-						context->curVarName = pszCursorValue;
+						context->curVarName = clang::getCString(cursorValue);
 					}
 					else if (cursorKind == CXCursorKind::CXCursor_StringLiteral) {
 						if (!context->curVarName.empty()) {
 							cursorValue = clang::getCursorSpelling(c);
-							auto pszCursorValue = clang::getCString(cursorValue);
+							std::string shaderCode = clang::getCString(cursorValue);
 							// we assume it's engine builtin shaders
 							auto idx = context->curVarName.find_last_of('_');
 							if (idx != std::string::npos)
@@ -392,7 +404,10 @@ void migrate_shader_one(std::string_view inpath) {
 							path += "/";
 							path += context->curVarName;
 							context->curVarName.clear();
-							context->shaderDecls.emplace_back(path.generic_string(), pszCursorValue);
+
+							replace(shaderCode, "\\n", "\n");
+							replace(shaderCode, "\"", "");
+							context->shaderDecls.emplace_back(path.generic_string(), std::move(shaderCode));
 						}
 					}
 					clang::disposeString(cursorValue);
@@ -422,6 +437,9 @@ void migrate_shader_one(std::string_view inpath) {
 	}
 	clang::disposeIndex(index);
 #pragma endregion
+
+	if (context.shaderDecls.size() == 1) // single decl, use inpath
+		context.shaderDecls[0].first = inpath;
 
 	for (auto& item : context.shaderDecls) {
 		auto& shader = item.second;
