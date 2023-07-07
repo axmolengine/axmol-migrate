@@ -45,7 +45,7 @@ jobs:
     - name: Build axmol-migrate
       shell: pwsh
       run: |
-        ./build1k.ps1 -xb '--config','Release','--target','axmol-migrate'
+        ./build.ps1 -xb '--config','Release'
     - name: Checking out fork of project
       shell: pwsh
       run: |

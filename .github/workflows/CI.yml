@@ -13,14 +13,14 @@ jobs:
     - uses: actions/checkout@v3
     - name: build
       shell: pwsh
-      run: ./build1k.ps1
+      run: ./build.ps1
   linux:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - name: build
       shell: pwsh
-      run: ./build1k.ps1
+      run: ./build.ps1
   osx:
     runs-on: macos-latest
     steps:
@@ -31,4 +31,4 @@ jobs:
         xcode-version: '14.2'
     - name: build
       shell: pwsh
-      run: ./build1k.ps1
+      run: ./build.ps1

@@ -2,3 +2,5 @@ build
 build_*
 *.zip
 clang-c/prebuilt
+.vscode
+.vs

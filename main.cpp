@@ -24,6 +24,10 @@ processing file 4: /home/vmroot/dev/axmol/tests/cpp-tests/Content/hd/extensions/
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
+#include <fstream>
+#include <string>
+#include <vector>
+#include "fmt/compile.h"
 
 #define AX_MIGRATE_VER "1.1.0"
 
@@ -62,6 +66,33 @@ std::string load_file(std::string_view path)
 		}
 	}
 	return {};
+}
+
+std::vector<std::string> load_file_lines(std::string_view path) {
+	std::ifstream file;
+	file.open(path.data());
+
+	std::vector<std::string> lines;
+	if (file.is_open()) {
+		std::string tp;
+		while (std::getline(file, tp)) {
+			lines.emplace_back(tp + "\n");
+		}
+		file.close();
+	}
+	return lines;
+}
+
+void save_file_lines(std::string_view path, const std::vector<std::string>& lines) {
+	std::ofstream file;
+	file.open(path.data());
+
+	if (file.is_open()) {
+		for (auto& line : lines) {
+			file.write(line.c_str(), line.size());
+		}
+		file.close();
+	}
 }
 
 void save_file(std::string_view path, const std::vector<std::string_view>& chunks)
@@ -205,10 +236,6 @@ void process_folder(std::string_view sub_path)
 }
 
 // ---------------------------------------- migrate shader glsl 100 to essl 310 for glscc input
-#include <fstream>
-#include <string>
-#include <vector>
-#include "fmt/compile.h"
 namespace Strings {
 	inline bool replace_bound(std::string& str, const std::string& from, const std::string& to, int start) {
 		size_t start_pos = str.find(from);
@@ -823,6 +850,41 @@ int do_migrate(int argc, const char** argv)
 		if (sourceDir) {
 			migrate_shader_in_dir(sourceDir, filterList, argv);
 		}
+	}
+	else if (strcmp(type, "code") == 0) {
+		auto axroot = getenv("AX_ROOT");
+        if(axroot) { // batch modify axmol engine shaders.cpp sources to shader name
+			std::string shaders_cpp = axroot;
+			if (shaders_cpp.back() != '/') shaders_cpp.push_back('/');
+			shaders_cpp += "core/renderer/Shaders.cpp";
+
+			auto lines = load_file_lines(shaders_cpp);
+			std::regex shader_varexp(R"([a-zA-Z_]+\w+(vert|frag)\b)");
+			for (auto& line : lines) {
+				std::match_results<std::string::const_iterator> results;
+				if (std::regex_search(line, results, shader_varexp))
+				{
+					auto& match = results[0];
+					auto first = match.first;
+					auto last = match.second;
+				
+					auto count = last - first;
+
+					std::string newexp{first, last};
+				
+					newexp += " = \"";
+					std::string_view varName{first, last};
+					varName.remove_suffix(3);
+					newexp += varName;
+					newexp += 's';
+					newexp += "\"";
+				
+					line.replace(std::distance(line.cbegin(), first), count, newexp);
+				}
+			}
+
+			save_file_lines(shaders_cpp, lines);
+        }
 	}
 
 	return 0;
