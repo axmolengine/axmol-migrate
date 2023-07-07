@@ -25,8 +25,6 @@ processing file 4: /home/vmroot/dev/axmol/tests/cpp-tests/Content/hd/extensions/
 #include <stdlib.h>
 #include <vector>
 
-#include "config.h"
-
 #define AX_MIGRATE_VER "1.1.0"
 
 namespace stdfs = std::filesystem;
@@ -305,7 +303,10 @@ namespace Strings {
 #include "clang-c/Index.h"
 void* hLibClang = nullptr;
 #define DEFINE_CLANG_FUNC(func) decltype(&clang_##func) func
+#if defined(_WIN32)
 #define GET_CLANG_FUNC(func) clang::func = (decltype(&clang_##func))GetProcAddress((HMODULE)hLibClang, "clang_" #func)
+#else
+#endif
 namespace clang {
 	DEFINE_CLANG_FUNC(createIndex);
 	DEFINE_CLANG_FUNC(parseTranslationUnit);
@@ -560,7 +561,7 @@ bool is_in_filter(std::string_view fileName, const std::vector<std::string_view>
 void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList) {
 	// load libclang
 #if defined(_WIN32)
-	hLibClang = LoadLibrary(LIBCLANG_DLL_PATH);
+	hLibClang = LoadLibrary("libclang.dll");
 #elif defined(__linux__) // linux
 #elif defined(__APPLE__) // macosx
 #endif

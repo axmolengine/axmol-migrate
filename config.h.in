@@ -1,3 +1,0 @@
-#pragma once
-
-#define LIBCLANG_DLL_PATH R"(@LIBCLANG_DLL_PATH@)"

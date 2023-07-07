@@ -6,14 +6,42 @@ project(axmol-migrate)
 
 set(CMAKE_CXX_STANDARD 20)
 add_executable(${target_name} main.cpp base/posix_io.cpp)
-if (WIN32)
-    file(GLOB_RECURSE LIBCLANG_DLL_PATH "${CMAKE_CURRENT_LIST_DIR}/plugins/*.dll")
-elseif(${CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(LIBCLANG_DLL_PATH "${CMAKE_CURRENT_LIST_DIR}/plugins/libclang/linux/libclang.so")
-elseif(APPLE)
-    set(LIBCLANG_DLL_PATH "${CMAKE_CURRENT_LIST_DIR}/plugins/libclang/mac/libclang.dylib")
+
+# download libclang prebuilt for clang.index
+set(clang_dir ${CMAKE_CURRENT_LIST_DIR}/clang-c)
+if(NOT IS_DIRECTORY ${clang_dir}/prebuilt)
+    set(pkg_ver "15.0.7")
+    set(pkg_name "llvmorg-${pkg_ver}")
+    set(pkg_url "https://github.com/axmolengine/build1k/releases/download/llvmorg-${pkg_ver}/${pkg_name}.zip")
+    if (NOT EXISTS ${clang_dir}/${pkg_name}.zip)
+        message(AUTHOR_WARNING "Downloading ${pkg_url}")
+        file(DOWNLOAD ${pkg_url} ${clang_dir}/${pkg_name}.zip)
+    endif()
+    if (NOT IS_DIRECTORY ${clang_dir}/${pkg_name})
+        file(ARCHIVE_EXTRACT INPUT ${clang_dir}/${pkg_name}.zip DESTINATION ${clang_dir}/)
+    endif()
+    file(RENAME ${clang_dir}/${pkg_name}/llvm/prebuilt ${clang_dir}/prebuilt)
+    file(REMOVE_RECURSE ${clang_dir}/${package_name})
 endif()
-configure_file("${CMAKE_CURRENT_LIST_DIR}/config.h.in" "${CMAKE_BINARY_DIR}/config.h" @ONLY)
+
+# add custom command copy libclang lib to exe dir
+if(WIN32)
+    set(platform_name "windows/x64")
+    set(SO_SUFFIX ".dll")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(platform_name "linux")
+    set(SO_SUFFIX ".so")
+elseif(APPLE)
+    set(platform_name "mac")
+    set(SO_SUFFIX ".dylib")
+endif()
+message(STATUS "platform_name=${platform_name}, SO_SUFFIX=${SO_SUFFIX}")
+add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_LIST_DIR}/clang-c/prebuilt/${platform_name}/libclang${SO_SUFFIX}
+            $<TARGET_FILE_DIR:${target_name}>
+        )
+
 target_include_directories(${target_name} 
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}
     PRIVATE ${CMAKE_BINARY_DIR}
