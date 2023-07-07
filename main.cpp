@@ -306,6 +306,8 @@ void* hLibClang = nullptr;
 #if defined(_WIN32)
 #define GET_CLANG_FUNC(func) clang::func = (decltype(&clang_##func))GetProcAddress((HMODULE)hLibClang, "clang_" #func)
 #else
+#include <dlfcn.h>
+#define GET_CLANG_FUNC(func) clang::func = (decltype(&clang_##func))dlsym(hLibClang, "clang_" #func)
 #endif
 namespace clang {
 	DEFINE_CLANG_FUNC(createIndex);
@@ -336,6 +338,10 @@ int replace(std::string& string, const std::string& replaced_key, const std::str
 	}
 	return count;
 }
+
+#if !defined(ARRAYSIZE)
+#define ARRAYSIZE(A) (sizeof(A) / sizeof((A)[0]))
+#endif
 
 void migrate_shader_one(std::string_view inpath) {
 
@@ -370,7 +376,7 @@ void migrate_shader_one(std::string_view inpath) {
 			[](CXCursor c, CXCursor parent, CXClientData client_data)
 			{
 				auto context = (ShaderSourceContext*)client_data;
-				
+
 				CXFile from_file{};
 				unsigned line = 0;
 				unsigned column = 0;
@@ -431,7 +437,7 @@ void migrate_shader_one(std::string_view inpath) {
 	else {
 		// read plain shader code line by line
 		std::fstream file;
-		file.open(inpath);
+		file.open(inpath.data());
 
 		std::string shader;
 
@@ -558,14 +564,34 @@ bool is_in_filter(std::string_view fileName, const std::vector<std::string_view>
 	return false;
 }
 
+static std::string _checkPath(const char* path) {
+	std::string ret;
+	ret.resize(PATH_MAX - 1);
+	int n = readlink(path, &ret.front(), PATH_MAX);
+	if (n > 0) {
+		ret.resize(n);
+		return ret;
+	}
+	return std::string{};
+}
+
 void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList) {
 	// load libclang
 #if defined(_WIN32)
 	hLibClang = LoadLibrary("libclang.dll");
-#elif defined(__linux__) // linux
-#elif defined(__APPLE__) // macosx
+#else
+	auto exePath = _checkPath("/proc/self/exe");
+	std::string_view exePathSV{exePath};
+	auto slash = exePath.find_last_of('/');
+	assert(slash != std::string::npos);
+	std::string exeDir{exePathSV.substr(0, slash + 1)};
+	exeDir += "/libclang.so";
+	hLibClang = dlopen(exeDir.c_str(), RTLD_LAZY | RTLD_LOCAL);
 #endif
-	if (!hLibClang) return; // can't load libclang
+	if (!hLibClang) {
+		fmt::println("load libclang fail.");
+		return; // can't load libclang
+	}
 	GET_CLANG_FUNC(createIndex);
 	GET_CLANG_FUNC(parseTranslationUnit);
 	GET_CLANG_FUNC(getTranslationUnitCursor);
@@ -604,7 +630,7 @@ usage:
    sources-migrate <source-dir> [--fuzzy]
 */
 
-int main(int argc, char** argv)
+int do_migrate(int argc, const char** argv)
 {
 	printf("axmol-migrate version %s\n\n", AX_MIGRATE_VER);
 
@@ -640,7 +666,7 @@ int main(int argc, char** argv)
 			++argi;
 			if (argi < argc) {
 				auto strFilters = argv[argi];
-				axstd::split_cb(strFilters, strlen(strFilters), ';', [&](char* s, char* e) {
+				axstd::split_cb(strFilters, strlen(strFilters), ';', [&](const char* s, const char* e) {
 					std::string_view filter{s, e};
 					if (!filter.empty() && std::find_if(filterList.begin(), filterList.end(), [=](const std::string_view& elem) {return cxx20::ic::iequals(elem, filter); }) == filterList.end()) {
 						filterList.emplace_back(filter);
@@ -695,4 +721,19 @@ int main(int argc, char** argv)
 	}
 
 	return 0;
+}
+
+int main(int argc, const char** argv)
+{
+	// test
+#if 0
+	const char* test_args[] = {
+		"/proc/self/exe",
+		"shader",
+		"--source-dir",
+		"/home/vmroot/dev/axmol/core/renderer/shaders"
+	};
+	do_migrate((int)ARRAYSIZE(test_args), test_args);
+#endif
+	return do_migrate(argc, argv);
 }
