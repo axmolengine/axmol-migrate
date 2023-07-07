@@ -304,10 +304,10 @@ namespace Strings {
 void* hLibClang = nullptr;
 #define DEFINE_CLANG_FUNC(func) decltype(&clang_##func) func
 #if defined(_WIN32)
-#define GET_CLANG_FUNC(func) clang::func = (decltype(&clang_##func))GetProcAddress((HMODULE)hLibClang, "clang_" #func)
+#define GET_CLANG_FUNC(func) func = (decltype(&clang_##func))GetProcAddress((HMODULE)hLibClang, "clang_" #func)
 #else
 #include <dlfcn.h>
-#define GET_CLANG_FUNC(func) clang::func = (decltype(&clang_##func))dlsym(hLibClang, "clang_" #func)
+#define GET_CLANG_FUNC(func) func = (decltype(&clang_##func))dlsym(hLibClang, "clang_" #func)
 #endif
 namespace clang {
 	DEFINE_CLANG_FUNC(createIndex);
@@ -324,6 +324,58 @@ namespace clang {
 	DEFINE_CLANG_FUNC(getCursorLocation);
 	DEFINE_CLANG_FUNC(getExpansionLocation);
 	DEFINE_CLANG_FUNC(getFileName);
+	DEFINE_CLANG_FUNC(getCursorPrintingPolicy);
+	DEFINE_CLANG_FUNC(PrintingPolicy_setProperty);
+	DEFINE_CLANG_FUNC(PrintingPolicy_dispose);
+	DEFINE_CLANG_FUNC(getCursorPrettyPrinted);
+	DEFINE_CLANG_FUNC(PrintingPolicy_getProperty);
+
+	static void load_lib(const char** argv) {
+		if (hLibClang) return;
+
+		// load libclang
+#if defined(_WIN32)
+		hLibClang = LoadLibrary("libclang.dll");
+#else
+		std::string exePath = argv[0];
+		std::string_view exePathSV{exePath};
+		auto slash = exePath.find_last_of('/');
+		assert(slash != std::string::npos);
+		std::string libclang_file{exePathSV.substr(0, slash + 1)};
+#if defined(__linux__)
+		libclang_file += "/libclang.so";
+#elif defined(__APPLE__)
+		libclang_file += "/libclang.dylib";
+#endif
+		if (stdfs::is_regular_file(libclang_file)) {
+			fmt::println("Loading libclang: {}", libclang_file);
+			hLibClang = dlopen(libclang_file.c_str(), RTLD_LAZY | RTLD_LOCAL);
+	    }
+#endif
+		if (!hLibClang) {
+			fmt::println("load libclang fail.");
+			return; // can't load libclang
+		}
+		GET_CLANG_FUNC(createIndex);
+		GET_CLANG_FUNC(parseTranslationUnit);
+		GET_CLANG_FUNC(getTranslationUnitCursor);
+		GET_CLANG_FUNC(visitChildren);
+		GET_CLANG_FUNC(getCursorSpelling);
+		GET_CLANG_FUNC(getCursorKindSpelling);
+		GET_CLANG_FUNC(getCursorKind);
+		GET_CLANG_FUNC(disposeTranslationUnit);
+		GET_CLANG_FUNC(disposeIndex);
+		GET_CLANG_FUNC(getCString);
+		GET_CLANG_FUNC(disposeString);
+		GET_CLANG_FUNC(getCursorLocation);
+		GET_CLANG_FUNC(getExpansionLocation);
+		GET_CLANG_FUNC(getFileName);
+		GET_CLANG_FUNC(getCursorPrintingPolicy);
+		GET_CLANG_FUNC(PrintingPolicy_setProperty);
+		GET_CLANG_FUNC(PrintingPolicy_dispose);
+		GET_CLANG_FUNC(getCursorPrettyPrinted);
+		GET_CLANG_FUNC(PrintingPolicy_getProperty);
+	}
 }
 
 int replace(std::string& string, const std::string& replaced_key, const std::string& replacing_key)
@@ -343,7 +395,57 @@ int replace(std::string& string, const std::string& replaced_key, const std::str
 #define ARRAYSIZE(A) (sizeof(A) / sizeof((A)[0]))
 #endif
 
-void migrate_shader_one(std::string_view inpath) {
+#include <set>
+
+std::string& migrate_strip_outpath(std::string& outpath, const std::set<std::string>& fileNameSet) {
+
+	auto slashpos = outpath.find_last_of("/\\");
+
+	if (slashpos != std::string::npos) {
+		std::string_view fileName {outpath.c_str() + slashpos + 1, outpath.size() - slashpos - 1};
+
+		std::string strippedFileName;
+		bool is3D = false;
+		if (cxx20::ic::starts_with(fileName, "CC2D_")) {
+			strippedFileName = fileName.substr(5);
+		}
+		else if (cxx20::ic::starts_with(fileName, "2D_")) {
+			strippedFileName = fileName.substr(3);
+		}
+		else if (cxx20::ic::starts_with(fileName, "CC3D_")) {
+			strippedFileName = fileName.substr(5);
+			is3D = true;
+		}
+		else if (cxx20::ic::starts_with(fileName, "3D_")) {
+			strippedFileName = fileName.substr(3);
+			is3D = true;
+		}
+		if (!strippedFileName.empty()) {
+			if (is3D) {
+				if (fileNameSet.find(strippedFileName) != fileNameSet.end()) {
+					auto dotpos = strippedFileName.find_last_of('.');
+					if (dotpos != std::string::npos)
+						strippedFileName.insert(dotpos, "3D");
+					else
+						strippedFileName.append("3D");
+				}
+			}
+			if (stdfs::is_regular_file(outpath))
+				stdfs::remove(outpath);
+			outpath.resize(outpath.size() - fileName.size());
+			outpath += strippedFileName;
+		}
+	}
+	return outpath;
+}
+
+void insret_define_guard(std::string& shader, size_t& insertpos, std::string_view defineName) {
+	std::string define_guard_code = fmt::format("\n\n#if !defined({0})\n#define {0} 0\n#endif\n\n"sv, defineName);
+	shader.insert(insertpos, define_guard_code);
+	insertpos += define_guard_code.size();
+}
+
+void migrate_shader_one(std::string_view inpath, const std::set<std::string>& fileNameSet) {
 
 #pragma region parse code file by libclang
 	struct ShaderSourceContext {
@@ -352,13 +454,15 @@ void migrate_shader_one(std::string_view inpath) {
 		std::string curVarName;
 		stdfs::path fileDir;
 		std::string fileName;
+		const std::set<std::string>* fileNameSet;
 	};
 	ShaderSourceContext context;
 	context.fileDir = stdfs::path(inpath).parent_path();
 	context.fileName = stdfs::path(inpath).filename().generic_string();
+	context.fileNameSet = &fileNameSet;
 	const char* command_line_args[] = {
 		"-xc++",
-		"--std=c++11",
+		"--std=c++17",
 	};
 	CXIndex index = clang::createIndex(0, 0);
 	CXTranslationUnit unit = clang::parseTranslationUnit(
@@ -383,7 +487,9 @@ void migrate_shader_one(std::string_view inpath) {
 				unsigned offset = 0;
 				auto loc = clang::getCursorLocation(c);
 				clang::getExpansionLocation(loc, &from_file, &line, &column, &offset);
-				if (!from_file) return CXChildVisit_Continue;
+				if (!from_file) {
+					return CXChildVisit_Continue;
+				}
 				auto from_spelling = clang::getFileName(from_file);
 				std::string fileName = clang::getCString(from_spelling);
 				std::string_view fv{fileName};
@@ -396,33 +502,27 @@ void migrate_shader_one(std::string_view inpath) {
 					auto cursorKind = clang::getCursorKind(c);
 					auto cursorValue = clang::getCursorSpelling(c);
 					if (cursorKind == CXCursorKind::CXCursor_VarDecl) {
-						cursorValue = clang::getCursorSpelling(c);
+						//cursorValue = clang::getCursorSpelling(c);
 						context->curVarName = clang::getCString(cursorValue);
 					}
 					else if (cursorKind == CXCursorKind::CXCursor_StringLiteral) {
 						if (!context->curVarName.empty()) {
-							cursorValue = clang::getCursorSpelling(c);
+							//cursorValue = clang::getCursorSpelling(c);
+
 							std::string shaderCode = clang::getCString(cursorValue);
+							std::string curVarName {std::move(context->curVarName)};
+
 							// we assume it's engine builtin shaders
-							auto idx = context->curVarName.find_last_of('_');
+							auto idx = curVarName.find_last_of('_');
 							if (idx != std::string::npos)
-								context->curVarName[idx] = '.';
+								curVarName[idx] = '.';
 							auto path = context->fileDir;
 							path += "/";
-							if (cxx20::ic::starts_with(context->curVarName, "CC2D_")) {
-								path += "2D_";
-								path += context->curVarName.substr(5);
-							}
-							else if (cxx20::ic::starts_with(context->curVarName, "CC3D_")) {
-								path += "3D_";
-								path += context->curVarName.substr(5);
-							}
-							else
-								path += context->curVarName;
-							context->curVarName.clear();
+							path += curVarName;
 
 							replace(shaderCode, "\\n", "\n");
 							replace(shaderCode, "\"", "");
+							replace(shaderCode, "\\t", "\t");
 							context->shaderDecls.emplace_back(path.generic_string(), std::move(shaderCode));
 						}
 					}
@@ -431,6 +531,7 @@ void migrate_shader_one(std::string_view inpath) {
 				return CXChildVisit_Recurse;
 			},
 			&context);
+
 
 		clang::disposeTranslationUnit(unit);
 	}
@@ -458,10 +559,25 @@ void migrate_shader_one(std::string_view inpath) {
 		context.shaderDecls[0].first = inpath;
 
 	for (auto& item : context.shaderDecls) {
+		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 		auto& shader = item.second;
 		std::regex verexp(R"(#version)");
 		if (!std::regex_search(shader, verexp)) {
-			shader.insert(0, "#version 310 es\nprecision highp float;\nprecision highp int;\n");
+			std::string_view vercode = "#version 310 es\nprecision highp float;\nprecision highp int;\n"sv;
+			shader.insert(0, vercode);
+			size_t insertpos = vercode.size();
+			if (shader.find("MAX_DIRECTIONAL_LIGHT_NUM") != std::string::npos) {
+				insret_define_guard(shader, insertpos, "MAX_DIRECTIONAL_LIGHT_NUM"sv);
+			}
+			if (shader.find("MAX_POINT_LIGHT_NUM") != std::string::npos) {
+				insret_define_guard(shader, insertpos, "MAX_POINT_LIGHT_NUM"sv);
+			}
+			if (shader.find("MAX_SPOT_LIGHT_NUM") != std::string::npos) {
+				insret_define_guard(shader, insertpos, "MAX_SPOT_LIGHT_NUM"sv);
+			}
+			//if (shader.find("USE_NORMAL_MAPPING") != std::string::npos) {
+			//	insret_define_guard(shader, insertpos, "USE_NORMAL_MAPPING"sv);
+			//}
 		}
 		else {
 			std::cout << "The shader " << inpath << " is already 310 es compatible!\n";
@@ -494,8 +610,20 @@ void migrate_shader_one(std::string_view inpath) {
 		while (Strings::replace(shader, "texture2D(", "texture("));
 		while (Strings::replace(shader, "texture2D (", "texture("));
 
+		while (Strings::replace(shader, "textureCube(", "texture("));
+		while (Strings::replace(shader, "textureCube (", "texture("));
+
 		while (Strings::replace(shader, "uniform sampler2D", fmt::format("layout(location = {}, binding = 0) uniform  sampler2D", std::to_string(layoutLocation++))));
 		while (Strings::replace(shader, "uniform  sampler2D", "uniform sampler2D"));
+
+		while (Strings::replace(shader, "uniform samplerCube", fmt::format("layout(location = {}, binding = 0) uniform  samplerCube", std::to_string(layoutLocation++))));
+		while (Strings::replace(shader, "uniform  samplerCube", "uniform samplerCube"));
+
+		// The symbol sample is reserved by GLES 310
+		Strings::replace(shader, "vec4 sample = texture(", "vec4 texColor = texture(");
+		Strings::replace(shader, "= sample.a;", "= texColor.a;");
+		Strings::replace(shader, "= sample.r;", "= texColor.r;");
+
 		layoutLocation--;
 
 		if (isFragmentShader) {
@@ -544,7 +672,6 @@ void migrate_shader_one(std::string_view inpath) {
 		if (shader[0] == '\n') shader = shader.substr(1);
 
 		std::ofstream modified;
-		auto outpath = item.first;
 		modified.open(outpath, std::ofstream::out | std::ofstream::trunc);
 		modified << shader;
 		modified.close();
@@ -564,48 +691,26 @@ bool is_in_filter(std::string_view fileName, const std::vector<std::string_view>
 	return false;
 }
 
-static std::string _checkPath(const char* path) {
-	std::string ret;
-	ret.resize(PATH_MAX - 1);
-	int n = readlink(path, &ret.front(), PATH_MAX);
-	if (n > 0) {
-		ret.resize(n);
-		return ret;
-	}
-	return std::string{};
-}
+void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList, const char** argv) {
+	clang::load_lib(argv);
 
-void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList) {
-	// load libclang
-#if defined(_WIN32)
-	hLibClang = LoadLibrary("libclang.dll");
-#else
-	auto exePath = _checkPath("/proc/self/exe");
-	std::string_view exePathSV{exePath};
-	auto slash = exePath.find_last_of('/');
-	assert(slash != std::string::npos);
-	std::string exeDir{exePathSV.substr(0, slash + 1)};
-	exeDir += "/libclang.so";
-	hLibClang = dlopen(exeDir.c_str(), RTLD_LAZY | RTLD_LOCAL);
-#endif
-	if (!hLibClang) {
-		fmt::println("load libclang fail.");
-		return; // can't load libclang
+	std::set<std::string> fileNameSet;
+	for (const auto& entry : stdfs::recursive_directory_iterator(dir)) {
+		const auto isDir = entry.is_directory();
+		if (entry.is_regular_file()) {
+			auto& path = entry.path();
+			auto strPath = path.generic_string();
+			auto pathname = path.filename();
+			auto strName = pathname.generic_string();
+
+			for (auto& filter : filterList)
+				if (cxx20::ic::ends_with(strName, filter))
+					break;
+
+			if (is_in_filter(strName, filterList))
+				fileNameSet.insert(strName);
+		}
 	}
-	GET_CLANG_FUNC(createIndex);
-	GET_CLANG_FUNC(parseTranslationUnit);
-	GET_CLANG_FUNC(getTranslationUnitCursor);
-	GET_CLANG_FUNC(visitChildren);
-	GET_CLANG_FUNC(getCursorSpelling);
-	GET_CLANG_FUNC(getCursorKindSpelling);
-	GET_CLANG_FUNC(getCursorKind);
-	GET_CLANG_FUNC(disposeTranslationUnit);
-	GET_CLANG_FUNC(disposeIndex);
-	GET_CLANG_FUNC(getCString);
-	GET_CLANG_FUNC(disposeString);
-	GET_CLANG_FUNC(getCursorLocation);
-	GET_CLANG_FUNC(getExpansionLocation);
-	GET_CLANG_FUNC(getFileName);
 
 	for (const auto& entry : stdfs::recursive_directory_iterator(dir)) {
 		const auto isDir = entry.is_directory();
@@ -620,7 +725,7 @@ void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_v
 					break;
 
 			if (is_in_filter(strName, filterList))
-				migrate_shader_one(strPath);
+				migrate_shader_one(strPath, fileNameSet);
 		}
 	}
 }
@@ -635,7 +740,7 @@ int do_migrate(int argc, const char** argv)
 	printf("axmol-migrate version %s\n\n", AX_MIGRATE_VER);
 
 	if (argc < 3) {
-		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh]\type: cpp, shader");
+		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh]\ttype: cpp, shader");
 		return -1;
 	}
 
@@ -716,7 +821,7 @@ int do_migrate(int argc, const char** argv)
 	else if (strcmp(type, "shader") == 0)
 	{ // migrate glsl 100 to essl 310
 		if (sourceDir) {
-			migrate_shader_in_dir(sourceDir, filterList);
+			migrate_shader_in_dir(sourceDir, filterList, argv);
 		}
 	}
 
@@ -725,15 +830,21 @@ int do_migrate(int argc, const char** argv)
 
 int main(int argc, const char** argv)
 {
-	// test
-#if 0
-	const char* test_args[] = {
-		"/proc/self/exe",
-		"shader",
-		"--source-dir",
-		"/home/vmroot/dev/axmol/core/renderer/shaders"
-	};
-	do_migrate((int)ARRAYSIZE(test_args), test_args);
+	if (do_migrate(argc, argv) == 0)
+		return 0;
+#if 0 // test only
+	auto axroot = getenv("AX_ROOT");
+	if (axroot) {
+		std::string ax_shader_root = axroot;
+		ax_shader_root += "core/renderer/shaders";
+		const char* test_args[] = {
+			argv[0],
+			"shader",
+			"--source-dir",
+			ax_shader_root.c_str()
+		};
+		do_migrate((int)ARRAYSIZE(test_args), test_args);
+	}
+	return 0;
 #endif
-	return do_migrate(argc, argv);
 }
