@@ -35,7 +35,7 @@ if(NOT IS_DIRECTORY ${clang_dir}/prebuilt)
         file(ARCHIVE_EXTRACT INPUT ${clang_dir}/${pkg_name}.zip DESTINATION ${clang_dir}/)
     endif()
     file(RENAME ${clang_dir}/${pkg_name}/llvm/prebuilt ${clang_dir}/prebuilt)
-    file(REMOVE_RECURSE ${clang_dir}/${package_name})
+    file(REMOVE_RECURSE ${clang_dir}/${pkg_name})
 endif()
 
 # add custom command copy libclang lib to exe dir
