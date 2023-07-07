@@ -208,7 +208,7 @@ void process_folder(std::string_view sub_path)
 #include <fstream>
 #include <string>
 #include <vector>
-#include <format>
+#include "fmt/compile.h"
 namespace Strings {
 	inline bool replace_bound(std::string& str, const std::string& from, const std::string& to, int start) {
 		size_t start_pos = str.find(from);
@@ -475,11 +475,11 @@ void migrate_shader_one(std::string_view inpath) {
 		int layoutLocation = 0;
 		int layoutLocationOut = 0;
 
-		while (Strings::replace(shader, "attribute", std::format("layout (location = {}) in",
+		while (Strings::replace(shader, "attribute", fmt::format("layout (location = {}) in",
 			std::to_string(layoutLocation++))));
 		layoutLocation--;
 
-		while (Strings::replace(shader, "varying", std::format("layout (location = {}) {}",
+		while (Strings::replace(shader, "varying", fmt::format("layout (location = {}) {}",
 			std::to_string((isFragmentShader ? (layoutLocation++) : (layoutLocationOut++))), isFragmentShader ? "in" : "out")));
 		layoutLocation--;
 
@@ -488,12 +488,12 @@ void migrate_shader_one(std::string_view inpath) {
 		while (Strings::replace(shader, "texture2D(", "texture("));
 		while (Strings::replace(shader, "texture2D (", "texture("));
 
-		while (Strings::replace(shader, "uniform sampler2D", std::format("layout(location = {}, binding = 0) uniform  sampler2D", std::to_string(layoutLocation++))));
+		while (Strings::replace(shader, "uniform sampler2D", fmt::format("layout(location = {}, binding = 0) uniform  sampler2D", std::to_string(layoutLocation++))));
 		while (Strings::replace(shader, "uniform  sampler2D", "uniform sampler2D"));
 		layoutLocation--;
 
 		if (isFragmentShader) {
-			Strings::replace(shader, "void main", std::format("layout (location = {}) out vec4 FragColor;\nvoid main",
+			Strings::replace(shader, "void main", fmt::format("layout (location = {}) out vec4 FragColor;\nvoid main",
 				std::to_string(layoutLocationOut++)));
 			layoutLocationOut--;
 		}

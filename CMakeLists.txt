@@ -7,6 +7,20 @@ project(axmol-migrate)
 set(CMAKE_CXX_STANDARD 20)
 add_executable(${target_name} main.cpp base/posix_io.cpp)
 
+target_include_directories(${target_name} 
+    PRIVATE ${CMAKE_CURRENT_LIST_DIR}
+    PRIVATE "${CMAKE_CURRENT_LIST_DIR}/fmt/include"
+    PRIVATE ${CMAKE_BINARY_DIR}
+)
+target_compile_definitions(${target_name} PRIVATE FMT_HEADER_ONLY=1)
+set_target_properties(${target_name}
+        PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+
+############### clang.index shared libs #############
 # download libclang prebuilt for clang.index
 set(clang_dir ${CMAKE_CURRENT_LIST_DIR}/clang-c)
 if(NOT IS_DIRECTORY ${clang_dir}/prebuilt)
@@ -41,14 +55,3 @@ add_custom_command(TARGET ${target_name} POST_BUILD
             ${CMAKE_CURRENT_LIST_DIR}/clang-c/prebuilt/${platform_name}/libclang${SO_SUFFIX}
             $<TARGET_FILE_DIR:${target_name}>
         )
-
-target_include_directories(${target_name} 
-    PRIVATE ${CMAKE_CURRENT_LIST_DIR}
-    PRIVATE ${CMAKE_BINARY_DIR}
-)
-set_target_properties(${target_name}
-        PROPERTIES
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-    )
