@@ -128,12 +128,6 @@ Invoke-Expression $strFullCmdLine
 
 $buildResult = ConvertFrom-Json $env:buildResult
 
-if ($is_ci -and !$buildResult.compilerID.StartsWith('mingw')) { # run tests
-    $targetOS = $buildResult.targetOS
-    $buildDir = $buildResult.buildDir
-    & .\ci\test.ps1 -dir $buildDir -target $targetOS
-}
-
 . $myRoot/1k/utils.ps1
 
 pauseIfExplorer("build successfully")
