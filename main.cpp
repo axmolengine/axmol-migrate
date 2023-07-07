@@ -93,7 +93,7 @@ bool regex_search_for_replace(const std::string& content, const std::regex& re)
 			++ptr;
 
 		auto next_line = *ptr == '\n' ? ptr + 1 : ptr;
-		std::string_view line { cur_line, next_line }; // ensure line contains '\n' if not '\0'
+		std::string_view line { cur_line, static_cast<size_t>(next_line - cur_line)}; // ensure line contains '\n' if not '\0'
 
 		if (line.length() > 1) {
 			std::match_results<std::string_view::const_iterator> results;
@@ -105,12 +105,12 @@ bool regex_search_for_replace(const std::string& content, const std::regex& re)
 				auto first = match.first;
 				auto last = match.second;
 				// assert(first >= line.data() && first <= &line.back());
-				std::string_view word { first, last };
-				std::string_view chunk1 { cur_line, std::addressof(*last) - 2 };
+				std::string_view word { std::addressof(*first), (size_t) std::distance(first, last)};
+				std::string_view chunk1 { cur_line, (size_t)std::distance(cur_line,  std::addressof(*last) - 2)};
 				chunks.push_back(chunk1);
 				auto chunk2_first = std::addressof(*last);
 				if (chunk2_first < next_line) {
-					std::string_view chunk2 { chunk2_first, next_line };
+					std::string_view chunk2 { chunk2_first, (size_t)std::distance(chunk2_first, next_line) };
 					chunks.push_back(chunk2);
 				}
 				++hints;
@@ -772,7 +772,7 @@ int do_migrate(int argc, const char** argv)
 			if (argi < argc) {
 				auto strFilters = argv[argi];
 				axstd::split_cb(strFilters, strlen(strFilters), ';', [&](const char* s, const char* e) {
-					std::string_view filter{s, e};
+					std::string_view filter{s, static_cast<size_t>(e - s)};
 					if (!filter.empty() && std::find_if(filterList.begin(), filterList.end(), [=](const std::string_view& elem) {return cxx20::ic::iequals(elem, filter); }) == filterList.end()) {
 						filterList.emplace_back(filter);
 					}
