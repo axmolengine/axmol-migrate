@@ -836,6 +836,7 @@ int main(int argc, const char** argv)
 	auto axroot = getenv("AX_ROOT");
 	if (axroot) {
 		std::string ax_shader_root = axroot;
+		if (ax_shader_root.back() != '/') ax_shader_root.push_back('/');
 		ax_shader_root += "core/renderer/shaders";
 		const char* test_args[] = {
 			argv[0],
