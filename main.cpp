@@ -873,7 +873,7 @@ int do_migrate(int argc, const char** argv)
 					std::string newexp{first, last};
 				
 					newexp += " = \"";
-					std::string_view varName{first, last};
+					std::string_view varName{std::addressof(*first), (size_t)std::distance(std::addressof(*first), std::addressof(*last))};
 					varName.remove_suffix(3);
 					newexp += varName;
 					newexp += 's';
