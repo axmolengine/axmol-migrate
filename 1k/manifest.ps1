@@ -4,7 +4,7 @@ $manifest = @{
     xcode        = '13.0.0~14.2.0'; # range
     clang        = '15.0.0+';
     gcc          = '9.0.0+';
-    cmake        = '3.26.4+';
+    cmake        = '3.22.1+';
 }
 
 [void]$manifest

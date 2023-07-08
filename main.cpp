@@ -472,7 +472,8 @@ void insret_define_guard(std::string& shader, size_t& insertpos, std::string_vie
 	insertpos += define_guard_code.size();
 }
 
-void migrate_shader_one(std::string_view inpath, const std::set<std::string>& fileNameSet) {
+extern void migrate_shader_source_one(std::string& shader_source, const std::string& outpath);
+void migrate_shader_file_one(std::string_view inpath, const std::set<std::string>& fileNameSet) {
 
 #pragma region parse code file by libclang
 	struct ShaderSourceContext {
@@ -588,6 +589,8 @@ void migrate_shader_one(std::string_view inpath, const std::set<std::string>& fi
 	for (auto& item : context.shaderDecls) {
 		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 		auto& shader = item.second;
+		migrate_shader_source_one(shader, outpath);
+#if 0
 		std::regex verexp(R"(#version)");
 		if (!std::regex_search(shader, verexp)) {
 			std::string_view vercode = "#version 310 es\nprecision highp float;\nprecision highp int;\n"sv;
@@ -703,9 +706,9 @@ void migrate_shader_one(std::string_view inpath, const std::set<std::string>& fi
 		modified << shader;
 		modified.close();
 
-		std::cout << "Convert " << outpath << " to 310 es done.\n";
-
 #pragma endregion
+#endif
+        fmt::println("Convert {} to 310 es done.", outpath);
 	}
 	if (context.shaderDecls.size() > 1)
 		stdfs::remove(inpath);
@@ -718,7 +721,7 @@ bool is_in_filter(std::string_view fileName, const std::vector<std::string_view>
 	return false;
 }
 
-void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList, const char** argv) {
+void migrate_shader_files_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList, const char** argv) {
 	clang::load_lib(argv);
 
 	std::set<std::string> fileNameSet;
@@ -752,7 +755,7 @@ void migrate_shader_in_dir(std::string_view dir, const std::vector<std::string_v
 					break;
 
 			if (is_in_filter(strName, filterList))
-				migrate_shader_one(strPath, fileNameSet);
+				migrate_shader_file_one(strPath, fileNameSet);
 		}
 	}
 }
@@ -848,7 +851,7 @@ int do_migrate(int argc, const char** argv)
 	else if (strcmp(type, "shader") == 0)
 	{ // migrate glsl 100 to essl 310
 		if (sourceDir) {
-			migrate_shader_in_dir(sourceDir, filterList, argv);
+			migrate_shader_files_in_dir(sourceDir, filterList, argv);
 		}
 	}
 	else if (strcmp(type, "code") == 0) {
@@ -894,7 +897,8 @@ int main(int argc, const char** argv)
 {
 	if (do_migrate(argc, argv) == 0)
 		return 0;
-#if 0 // test only
+#if defined(_DEBUG) || !defined(NDEBUG) // test only
+#pragma message("building debug")
 	auto axroot = getenv("AX_ROOT");
 	if (axroot) {
 		std::string ax_shader_root = axroot;
@@ -906,7 +910,8 @@ int main(int argc, const char** argv)
 			"--source-dir",
 			ax_shader_root.c_str()
 		};
-		do_migrate((int)ARRAYSIZE(test_args), test_args);
+		if (stdfs::is_directory(ax_shader_root))
+		    do_migrate((int)ARRAYSIZE(test_args), test_args);
 	}
 	return 0;
 #endif
