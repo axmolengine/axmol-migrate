@@ -6,10 +6,20 @@
 #include "fmt/compile.h"
 #include <map>
 #include "yasio/string_view.hpp"
+#include <regex>
+#include <unordered_set>
 
 using namespace std::string_view_literals;
 
 namespace helper {
+    int hash_function(std::string key) {
+        int hashCode = 0;
+        for (int i = 0; i < key.length(); i++) {
+            hashCode += key[i] | i * 1024 >> 2;
+        }
+        return abs(hashCode);
+    }
+
     inline bool replace(std::string& str, const std::string& from, const std::string& to) {
         size_t start_pos = str.find(from);
         if (start_pos == std::string::npos)
@@ -63,6 +73,17 @@ namespace helper {
         return count;
     }
 
+    inline std::string remove_substring(const std::string& input, const char from, const char until) {
+        std::size_t startPos = input.find(from); // Find the position of '['
+        if (startPos != std::string::npos) {
+            std::size_t endPos = input.find(until, startPos + 1); // Find the position of ']' after '['
+            if (endPos != std::string::npos) {
+                return input.substr(0, startPos) + input.substr(endPos + 1);
+            }
+        }
+        return input; // Return the original string if '[' or ']' is not found
+    }
+
     inline void pack_vector_string_compact(std::string& str, std::vector<std::string>& lines) {
         str = "";
         for (auto& _ : lines)
@@ -92,103 +113,10 @@ void save_shader_source(const std::string& path, std::string& in) {
 
 #define PARSE_ERROR_CONTINUE(T, I) do { std::cout << fmt::format("Warning: {} at line {} couldn't be parsed", T, I) << std::endl; continue; } while (0);
 
-typedef std::map<int, std::vector<std::string>> UBOIndexMap;
-
-UBOIndexMap generate_any_stage_ubo_indexer(std::string& vertex_shader) {
+void parse_vertex_100_310(std::string& vertex_shader) {
     std::vector<std::string> lines;
 
-    UBOIndexMap UBOsymbols;
-    bool isInUBO = false;
-    bool currentBoundUBOIndex = 0;
-    int UBOIndex= 0;
-
-    helper::split(vertex_shader, "\n", lines);
-
-#define CHECK_UNSET_UBO_BLOCKS_CONTINUE(I) if (checkUnsetUBO(I)) continue;
-
-    auto checkUnsetUBO = [&](int* i) -> bool
-    {
-        if (isInUBO) {
-            (*i)++;
-            isInUBO = false;
-            return true;
-        }
-        return false;
-    };
-
-    for (int i = 0; i < lines.size(); i++) {
-        auto line = lines[i];
-        helper::trim(line);
-
-        if (line.starts_with("uniform")) {
-            std::vector<std::string> columns;
-            helper::split(line, " ", columns);
-
-            if (columns.size() < 2)
-                PARSE_ERROR_CONTINUE("Uniform Attribute", i);
-
-            std::string datatype = columns[1];
-            std::string varname = columns[2];
-
-            if (datatype == "sampler2D" || datatype == "samplerCube") {
-                CHECK_UNSET_UBO_BLOCKS_CONTINUE(&i); i++;
-                continue;
-            }
-
-            line = "";
-
-            auto checkUniformInternalPrecalculation = [](std::string& uniform) {
-                if (uniform.find("[") != std::string::npos && !uniform.ends_with("];"))
-                    uniform += "];";
-            };
-
-            if (!isInUBO) {
-                UBOsymbols.insert({ UBOIndex, {} });
-                isInUBO = true;
-                std::string temp = fmt::format("    {} {}", datatype, varname);
-                checkUniformInternalPrecalculation(temp);
-                UBOsymbols.find(UBOIndex)->second.push_back(temp);
-                currentBoundUBOIndex = UBOIndex++;
-                continue;
-            }
-
-            std::string temp = fmt::format("    {} {}", datatype, varname);
-            checkUniformInternalPrecalculation(temp);
-            UBOsymbols.find(currentBoundUBOIndex)->second.push_back(temp);
-        }
-        else CHECK_UNSET_UBO_BLOCKS_CONTINUE(&i);
-    }
-
-    return UBOsymbols;
-}
-
-UBOIndexMap merge_ubo_map_unique(UBOIndexMap& i1, UBOIndexMap& i2) {
-    UBOIndexMap ubo_indexer;
-
-    auto merge = [&](UBOIndexMap& target) {
-        for (auto& _ : target) {
-            if (ubo_indexer.find(_.first) == ubo_indexer.end())
-                ubo_indexer.insert({ _.first, {} });
-
-            for (auto& __ : _.second) {
-                auto& uniforms = ubo_indexer.find(_.first)->second;
-                auto it = std::find(uniforms.begin(), uniforms.end(), __);
-                if (it == uniforms.end())
-                    uniforms.push_back(__);
-            }
-        }
-    };
-
-    merge(i1);
-    merge(i2);
-
-    return ubo_indexer;
-}
-
-void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) {
-    std::vector<std::string> lines;
-
-    int currentUBOIndex = 0;
+    std::unordered_set<std::string> used_uniforms;
 
     int currentIndentLevel = 0;
 
@@ -202,6 +130,12 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
     for (int i = 0; i < lines.size(); i++) {
         auto& line = lines[i];
         helper::trim(line);
+
+        while (helper::replace(line, "lowp ", ""));
+        while (helper::replace(line, "mediump ", ""));
+        while (helper::replace(line, "highp ", ""));
+
+        line = std::regex_replace(line, std::regex(R"(\\s+)"), " ");
 
         if (i == 0 && !line.starts_with("#version 310 es")) {
             lines.insert(lines.begin() + 0, "#version 310 es");
@@ -218,6 +152,10 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
         if (line.starts_with("#ifdef GL_ES")) {
 
             for (int d = i; d < lines.size(); d++) {
+                if (lines[d].starts_with("#endif")) {
+                    lines[d] = "";
+                    break;
+                }
                 if (lines[d].starts_with("#else"))
                 {
                     lines[d] = "";
@@ -232,6 +170,22 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
                 }
                 lines[d] = "";
             }
+            continue;
+        }
+
+        if (line.starts_with("#if")) {
+            line = "";
+            continue;
+        }
+
+        if (line.starts_with("#else")) {
+            line = "";
+            continue;
+        }
+
+        if (line.starts_with("#endif")) {
+            line = "";
+            continue;
         }
 
         if (line.starts_with("precision"))
@@ -264,13 +218,27 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
             if (columns.size() < 2)
                 PARSE_ERROR_CONTINUE("Varying Attribute", i);
 
-            columns[2] = columns[2].substr(0, columns[2].size() - 1);
-
             std::string datatype = columns[1];
             std::string varname = columns[2];
+            std::string extra = "";
+            for (int i = 3; i < columns.size(); i++) extra += columns[i];
+
+            if (used_uniforms.find(varname) != used_uniforms.end())
+            {
+                line = "";
+                continue;
+            }
+            else
+                used_uniforms.emplace(varname);
+
             std::string location = std::to_string(locationOut++);
 
-            line = fmt::format("layout (location = {}) out {} {};", location, datatype, varname);
+            if (varname.ends_with(';'))
+                varname = varname.substr(0, varname.size() - 1);
+            if (extra.ends_with(';'))
+                extra = extra.substr(0, extra.size() - 1);
+
+            line = fmt::format("layout (location = {}) out {} {} {};", location, datatype, varname, extra);
 
             continue;
         }
@@ -285,49 +253,31 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
             std::string datatype = columns[1];
             std::string varname = columns[2];
 
-            if (datatype == "sampler2D" || datatype == "samplerCube") {
-                std::string index = std::to_string(locationUniform++);
-                line = fmt::format("layout (location = {}, binding = 0) uniform {} {};", index, datatype, varname);
-                continue;
-            }
+            if (varname.ends_with(';'))
+                varname = varname.substr(0, varname.size() - 1);
+            varname = helper::remove_substring(varname, '[', ']');
 
             line = "";
 
-            if (currentUBOIndex < ubo_indexer.size()) {
-                auto& uniforms = ubo_indexer.find(currentUBOIndex)->second;
-                int lineOffsetIndex = 0;
-                lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform UBO_" +
-                    std::to_string(currentUBOIndex) + " {");
-                for (auto& _ : uniforms)
-                    lines.insert(lines.begin() + i + lineOffsetIndex++, _);
-                lines.insert(lines.begin() + i + lineOffsetIndex, "};\n");
-                currentUBOIndex++;
-                i += lineOffsetIndex - 1;
-            }
+            int lineOffsetIndex = 0;
+            std::string uHash = " U_" + std::to_string(helper::hash_function(varname));
+            for (auto& _ : lines)
+                while (helper::replace(_, varname, uHash));
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform " + varname + " {");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + "; ");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "};\n");
 
             continue;
-        }
-
-        if (line.starts_with("void main") && currentUBOIndex < ubo_indexer.size()) {
-            while (currentUBOIndex < ubo_indexer.size()) {
-                auto& uniforms = ubo_indexer.find(currentUBOIndex)->second;
-                int lineOffsetIndex = 0;
-                lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform UBO_" +
-                    std::to_string(currentUBOIndex) + " {");
-                for (auto& _ : uniforms)
-                    lines.insert(lines.begin() + i + lineOffsetIndex++, _);
-                lines.insert(lines.begin() + i + lineOffsetIndex, "};");
-                currentUBOIndex++;
-                i += lineOffsetIndex + 1;
-            }
         }
     }
 
     helper::pack_vector_string_compact(vertex_shader, lines);
 }
 
-void parse_fragment_100_310(std::string& fragment_shader, UBOIndexMap& ubo_indexer) {
+void parse_fragment_100_310(std::string& fragment_shader) {
     std::vector<std::string> lines;
+
+    std::unordered_set<std::string> used_uniforms;
 
     int currentUBOIndex = 0;
 
@@ -343,6 +293,12 @@ void parse_fragment_100_310(std::string& fragment_shader, UBOIndexMap& ubo_index
     for (int i = 0; i < lines.size(); i++) {
         auto& line = lines[i];
         helper::trim(line);
+
+        while (helper::replace(line, "lowp ", ""));
+        while (helper::replace(line, "mediump ", ""));
+        while (helper::replace(line, "highp ", ""));
+
+        line = std::regex_replace(line, std::regex(R"(\\s+)"), " ");
 
         while (helper::replace(line, "gl_FragColor", "FragColor")) {};
         while (helper::replace(line, "texture2D(", "texture(")) {};
@@ -365,6 +321,10 @@ void parse_fragment_100_310(std::string& fragment_shader, UBOIndexMap& ubo_index
         if (line.starts_with("#ifdef GL_ES")) {
 
             for (int d = i; d < lines.size(); d++) {
+                if (lines[d].starts_with("#endif")) {
+                    lines[d] = "";
+                    break;
+                }
                 if (lines[d].starts_with("#else"))
                 {
                     lines[d] = "";
@@ -381,21 +341,51 @@ void parse_fragment_100_310(std::string& fragment_shader, UBOIndexMap& ubo_index
             }
         }
 
+        if (line.starts_with("#if")) {
+            line = "";
+            continue;
+        }
+
+        if (line.starts_with("#else")) {
+            line = "";
+            continue;
+        }
+
+        if (line.starts_with("#endif")) {
+            line = "";
+            continue;
+        }
+
         if (line.starts_with("varying")) {
             std::vector<std::string> columns;
             helper::split(line, " ", columns);
-            line = "";
 
             if (columns.size() < 2)
                 PARSE_ERROR_CONTINUE("Varying Attribute", i);
 
-            columns[2] = columns[2].substr(0, columns[2].size() - 1);
-
             std::string datatype = columns[1];
             std::string varname = columns[2];
+            std::string extra = "";
+            for (int i = 3; i < columns.size(); i++) extra += columns[i];
+
+            if (used_uniforms.find(varname) != used_uniforms.end())
+            {
+                line = "";
+                continue;
+            }
+            else
+                used_uniforms.emplace(varname);
+
             std::string location = std::to_string(locationIn++);
 
-            line = fmt::format("layout (location = {}) in {} {};", location, datatype, varname);
+            line = "";
+
+            if (varname.ends_with(';'))
+                varname = varname.substr(0, varname.size() - 1);
+            if (extra.ends_with(';'))
+                extra = extra.substr(0, extra.size() - 1);
+
+            line = fmt::format("layout (location = {}) in {} {} {};", location, datatype, varname, extra);
         }
 
         if (line.starts_with("uniform")) {
@@ -408,46 +398,31 @@ void parse_fragment_100_310(std::string& fragment_shader, UBOIndexMap& ubo_index
             std::string datatype = columns[1];
             std::string varname = columns[2];
 
+            if (varname.ends_with(';'))
+                varname = varname.substr(0, varname.size() - 1);
+            varname = helper::remove_substring(varname, '[', ']');
+
             if (datatype == "sampler2D" || datatype == "samplerCube") {
                 std::string index = std::to_string(locationUniform++);
-                line = fmt::format("layout (location = {}, binding = 0) uniform {} {}", index, datatype, varname);
+                line = fmt::format("layout (location = {}, binding = 0) uniform {} {};", index, datatype, varname);
                 continue;
             }
 
             line = "";
 
-            if (currentUBOIndex < ubo_indexer.size()) {
-                auto& uniforms = ubo_indexer.find(currentUBOIndex)->second;
-                int lineOffsetIndex = 0;
-                lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform UBO_" +
-                    std::to_string(currentUBOIndex) + " {");
-                for (auto& _ : uniforms)
-                    lines.insert(lines.begin() + i + lineOffsetIndex++, _);
-                lines.insert(lines.begin() + i + lineOffsetIndex, "};\n");
-                currentUBOIndex++;
-                i += lineOffsetIndex - 1;
-            }
+            int lineOffsetIndex = 0;
+            std::string uHash = " U_" + std::to_string(helper::hash_function(varname));
+            for (auto& _ : lines)
+                while (helper::replace(_, varname, uHash));
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform " + varname + " {");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + "; ");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "};\n");
 
             continue;
         }
 
-        if (line.starts_with("void main")) {
+        if (line.starts_with("void main"))
             line = fmt::format("layout (location = {}) out {} {};", locationOut++, "vec4", "FragColor") + "\n" + line;
-
-            if (currentUBOIndex < ubo_indexer.size()) {
-                while (currentUBOIndex < ubo_indexer.size()) {
-                    auto& uniforms = ubo_indexer.find(currentUBOIndex)->second;
-                    int lineOffsetIndex = 0;
-                    lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform UBO_" +
-                        std::to_string(currentUBOIndex) + " {");
-                    for (auto& _ : uniforms)
-                        lines.insert(lines.begin() + i + lineOffsetIndex++, _);
-                    lines.insert(lines.begin() + i + lineOffsetIndex, "};");
-                    currentUBOIndex++;
-                    i += lineOffsetIndex + 1;
-                }
-            }
-        }
     }
 
     helper::pack_vector_string_compact(fragment_shader, lines);
@@ -481,16 +456,12 @@ void format_any_stage(std::string& source) {
 }
 
 void migrate_shader_source_one(std::string& shader_source, const std::string& outpath) {
-    UBOIndexMap ubo_indexer = generate_any_stage_ubo_indexer(shader_source);
+    auto is_frag = cxx20::ic::ends_with(outpath, ".frag"sv) || shader_source.find("gl_FragColor") != std::string::npos;
 
-    auto is_frag = shader_source.find("gl_FragColor") != std::string::npos;
-
-    if(cxx20::ic::ends_with(outpath, ".frag"sv) || shader_source.find("gl_FragColor") != std::string::npos) {
-        parse_fragment_100_310(shader_source, ubo_indexer);
-    }
-    else {
-        parse_vertex_100_310(shader_source, ubo_indexer);
-    }
+    if(is_frag)
+        parse_fragment_100_310(shader_source);
+    else
+        parse_vertex_100_310(shader_source);
 
     format_any_stage(shader_source);
 
