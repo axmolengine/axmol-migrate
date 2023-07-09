@@ -252,6 +252,8 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
             std::string location = std::to_string(locationIn++);
 
             line = fmt::format("layout (location = {}) in {} {};", location, datatype, varname);
+
+            continue;
         }
 
         if (line.starts_with("varying")) {
@@ -269,6 +271,8 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
             std::string location = std::to_string(locationOut++);
 
             line = fmt::format("layout (location = {}) out {} {};", location, datatype, varname);
+
+            continue;
         }
 
         if (line.starts_with("uniform")) {
@@ -301,20 +305,7 @@ void parse_vertex_100_310(std::string& vertex_shader, UBOIndexMap& ubo_indexer) 
                 i += lineOffsetIndex - 1;
             }
 
-            /*if (!isInUBO) {
-                std::string index = std::to_string(UBOIndex);
-                UBOsymbols.insert({ UBOIndex, {} });
-                std::string head = "\nlayout(std140, binding = 0) uniform UBO_" + index + " {";
-                lines.insert(lines.begin() + i, head);
-                isInUBO = true;
-                std::string temp;
-                lines[1 + i++] = temp = fmt::format("    {} {};", datatype, varname);
-                UBOsymbols.find(UBOIndex)->second.push_back(temp);
-                currentBoundUBOIndex = UBOIndex++;
-                continue;
-            }*/
-
-            //line = fmt::format("    {} {};", datatype, varname);
+            continue;
         }
 
         if (line.starts_with("void main") && currentUBOIndex < ubo_indexer.size()) {
