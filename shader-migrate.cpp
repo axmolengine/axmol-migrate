@@ -149,6 +149,36 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             std::cout << "Vertex shader is already in glsl 310 es format." << std::endl;
         }
 
+        if (line.find('=') != std::string::npos && 
+            line.find("!=") == std::string::npos &&
+            line.find("+=") == std::string::npos &&
+            line.find("-=") == std::string::npos &&
+            line.find(">=") == std::string::npos &&
+            line.find("<=") == std::string::npos)
+        {
+            std::vector<std::string> columns;
+            helper::split(line, "=", columns);
+
+            if (columns.size() != 2)
+                PARSE_ERROR_CONTINUE("Unusual assigment '=' operator, Ignored as this might be a comparison operator", i);
+
+            for (auto& _ : columns)
+                helper::trim(_);
+
+            std::vector<std::string> lcolumns;
+            helper::split(columns[0], " ", lcolumns);
+            std::string datatype = lcolumns[0];
+
+            if (!columns[1].starts_with(datatype) && lcolumns.size() == 2)
+            {
+                columns[1] = datatype + "(" + columns[1];
+                helper::replace(columns[1], ";", ");");
+                line = fmt::format("{}= {}", columns[0], columns[1]);
+            }
+
+            continue;
+        }
+
         if (line.starts_with("#ifdef GL_ES")) {
 
             for (int d = i; d < lines.size(); d++) {
@@ -316,6 +346,36 @@ void parse_fragment_100_310(std::string& fragment_shader) {
         else if (i == 0)
         {
             std::cout << "Vertex shader is already in glsl 310 es format." << std::endl;
+        }
+
+        if (line.find('=') != std::string::npos &&
+            line.find("!=") == std::string::npos &&
+            line.find("+=") == std::string::npos &&
+            line.find("-=") == std::string::npos &&
+            line.find(">=") == std::string::npos &&
+            line.find("<=") == std::string::npos)
+        {
+            std::vector<std::string> columns;
+            helper::split(line, "=", columns);
+
+            if (columns.size() != 2)
+                PARSE_ERROR_CONTINUE("Unusual assigment '=' operator", i);
+
+            for (auto& _ : columns)
+                helper::trim(_);
+
+            std::vector<std::string> lcolumns;
+            helper::split(columns[0], " ", lcolumns);
+            std::string datatype = lcolumns[0];
+
+            if (!columns[1].starts_with(datatype) && lcolumns.size() == 2)
+            {
+                columns[1] = datatype + "(" + columns[1];
+                helper::replace(columns[1], ";", ");");
+                line = fmt::format("{}= {}", columns[0], columns[1]);
+            }
+
+            continue;
         }
 
         if (line.starts_with("#ifdef GL_ES")) {
