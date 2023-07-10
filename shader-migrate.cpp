@@ -8,6 +8,7 @@
 #include "yasio/string_view.hpp"
 #include <regex>
 #include <unordered_set>
+#include <unordered_map>
 
 using namespace std::string_view_literals;
 
@@ -134,8 +135,7 @@ void save_shader_source(const std::string& path, std::string& in) {
 
 void parse_vertex_100_310(std::string& vertex_shader) {
     std::vector<std::string> lines;
-
-    std::unordered_set<std::string> used_uniforms;
+    std::unordered_map<std::string, std::string> used_varyings;
 
     int currentIndentLevel = 0;
 
@@ -300,14 +300,6 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             std::string extra = "";
             for (int i = 3; i < columns.size(); i++) extra += columns[i];
 
-            if (used_uniforms.find(varname) != used_uniforms.end())
-            {
-                line = "";
-                continue;
-            }
-            else
-                used_uniforms.emplace(varname);
-
             std::string location = std::to_string(locationOut++);
 
             if (varname.ends_with(';'))
@@ -315,7 +307,18 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             if (extra.ends_with(';'))
                 extra = extra.substr(0, extra.size() - 1);
 
-            line = fmt::format("layout (location = {}) out {} {} {};", location, datatype, varname, extra);
+            std::string final = fmt::format("layout (location = {}) out {} {} {};", location, datatype, varname, extra);
+
+            if (used_varyings.find(varname) != used_varyings.end())
+            {
+                line = used_varyings.find(varname)->second;
+                locationOut--;
+                continue;
+            }
+            else
+                used_varyings.insert({ varname, final });
+
+            line = final;
 
             continue;
         }
@@ -368,6 +371,7 @@ void parse_vertex_100_310(std::string& vertex_shader) {
 
 void parse_fragment_100_310(std::string& fragment_shader) {
     std::vector<std::string> lines;
+    std::unordered_map<std::string, std::string> used_varyings;
 
     std::unordered_set<std::string> used_uniforms;
 
@@ -520,14 +524,6 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             std::string extra = "";
             for (int i = 3; i < columns.size(); i++) extra += columns[i];
 
-            if (used_uniforms.find(varname) != used_uniforms.end())
-            {
-                line = "";
-                continue;
-            }
-            else
-                used_uniforms.emplace(varname);
-
             std::string location = std::to_string(locationIn++);
 
             line = "";
@@ -537,7 +533,18 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             if (extra.ends_with(';'))
                 extra = extra.substr(0, extra.size() - 1);
 
-            line = fmt::format("layout (location = {}) in {} {} {};", location, datatype, varname, extra);
+            std::string final = fmt::format("layout (location = {}) in {} {} {};", location, datatype, varname, extra);
+
+            if (used_varyings.find(varname) != used_varyings.end())
+            {
+                line = used_varyings.find(varname)->second;
+                locationIn--;
+                continue;
+            }
+            else
+                used_varyings.insert({ varname, final });
+
+            line = final;
         }
 
         if (line.starts_with("uniform")) {
