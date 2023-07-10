@@ -28,6 +28,14 @@ namespace helper {
         return true;
     }
 
+    inline bool replace(std::string& str, const char from, const std::string& to) {
+        size_t start_pos = str.find(from);
+        if (start_pos == std::string::npos)
+            return false;
+        str.replace(start_pos, 1, to);
+        return true;
+    }
+
     inline void ltrim(std::string& s) {
         s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
             return !std::isspace(ch);
@@ -84,11 +92,22 @@ namespace helper {
         return input; // Return the original string if '[' or ']' is not found
     }
 
+    inline std::string extract_substring(const std::string& input, const char from, const char until) {
+        std::size_t startPos = input.find(from); // Find the position of '['
+        if (startPos != std::string::npos) {
+            std::size_t endPos = input.find(until, startPos + 1); // Find the position of ']' after '['
+            if (endPos != std::string::npos) {
+                return input.substr(startPos, endPos);
+            }
+        }
+        return "";
+    }
+
     inline void pack_vector_string_compact(std::string& str, std::vector<std::string>& lines) {
         str = "";
         for (auto& _ : lines)
             if (_.size() > 0)
-                str += _ + '\n';
+                str += std::regex_replace(_, std::regex(R"(\\s+)"), " ") + '\n';
     }
 }
 
@@ -134,6 +153,8 @@ void parse_vertex_100_310(std::string& vertex_shader) {
         while (helper::replace(line, "lowp ", ""));
         while (helper::replace(line, "mediump ", ""));
         while (helper::replace(line, "highp ", ""));
+        while (helper::replace(line, "precision float;", ""));
+        while (helper::replace(line, "texColor.rgb(texColor.a)", "texColor.rgb * texColor.a"));
 
         line = std::regex_replace(line, std::regex(R"(\\s+)"), " ");
 
@@ -149,10 +170,12 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             std::cout << "Vertex shader is already in glsl 310 es format." << std::endl;
         }
 
-        if (line.find('=') != std::string::npos && 
+        if (line.find('=') != std::string::npos &&
             line.find("!=") == std::string::npos &&
             line.find("+=") == std::string::npos &&
             line.find("-=") == std::string::npos &&
+            line.find("*=") == std::string::npos &&
+            line.find("/=") == std::string::npos &&
             line.find(">=") == std::string::npos &&
             line.find("<=") == std::string::npos)
         {
@@ -179,42 +202,66 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             continue;
         }
 
-        if (line.starts_with("#ifdef GL_ES")) {
+        //if (line.starts_with("#ifdef GL_ES")) {
 
-            for (int d = i; d < lines.size(); d++) {
-                if (lines[d].starts_with("#endif")) {
-                    lines[d] = "";
-                    break;
-                }
-                if (lines[d].starts_with("#else"))
-                {
-                    lines[d] = "";
+        //    for (int d = i; d < lines.size(); d++) {
+        //        if (lines[d].starts_with("#endif")) {
+        //            lines[d] = "";
+        //            break;
+        //        }
+        //        if (lines[d].starts_with("#else"))
+        //        {
+        //            lines[d] = "";
 
-                    for (int e = i; e < lines.size(); e++) {
-                        if (lines[e].starts_with("#endif")) {
-                            lines[e] = "";
-                            break;
-                        }
-                    }
-                    break;
-                }
-                lines[d] = "";
-            }
-            continue;
-        }
+        //            for (int e = i; e < lines.size(); e++) {
+        //                if (lines[e].starts_with("#endif")) {
+        //                    lines[e] = "";
+        //                    break;
+        //                }
+        //            }
+        //            break;
+        //        }
+        //        lines[d] = "";
+        //    }
+        //    continue;
+        //}
 
-        if (line.starts_with("#if")) {
-            line = "";
-            continue;
-        }
+        if (line.starts_with("#if") && !line.starts_with("#ifdef")) {
 
-        if (line.starts_with("#else")) {
-            line = "";
-            continue;
-        }
+            auto parseMacro = [&](std::string& m) {
+                std::string cline = m.substr(0);
 
-        if (line.starts_with("#endif")) {
-            line = "";
+                while (helper::replace(cline, "#ifdef ", ""));
+                while (helper::replace(cline, "#ifndef ", ""));
+                while (helper::replace(cline, "#if ", ""));
+                while (helper::replace(cline, "#ifdef", ""));
+                while (helper::replace(cline, "#ifndef", ""));
+                while (helper::replace(cline, "#if", ""));
+
+                std::string forbidden_chars = "<>()0123456789";
+
+                for (int i = 0; i < forbidden_chars.length(); i++)
+                    while (helper::replace(cline, forbidden_chars[i], ""));
+
+                std::string macro = cline;
+                helper::trim(macro);
+                std::string newMacro = fmt::format(" defined({}) && {}", macro, macro);
+
+                helper::replace(line, macro, newMacro);
+                while (helper::replace(line, "#ifdef", "#if"));
+                while (helper::replace(line, "#ifndef", "#if"));
+            };
+
+            std::string cline = line.substr(0);
+            while (helper::replace(cline, "&&", "$SEARCH_MACRO$"));
+            while (helper::replace(cline, "||", "$SEARCH_MACRO$"));
+
+            std::vector<std::string> columns;
+            helper::split(cline, "$SEARCH_MACRO$", columns);
+
+            for (auto& _ : columns)
+                parseMacro(_);
+
             continue;
         }
 
@@ -283,8 +330,23 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             std::string datatype = columns[1];
             std::string varname = columns[2];
 
+            if (datatype == "sampler2D" || datatype == "samplerCube") {
+                std::string index = std::to_string(locationUniform++);
+                line = fmt::format("layout (binding = 0) uniform {} {}", datatype, varname);
+                continue;
+            }
+
+            for (int i = 3; i < columns.size(); i++) {
+                if (columns[i].find("//") != std::string::npos)
+                    break;
+                varname += fmt::format(" {} ", columns[i]);
+            }
+
+            helper::trim(varname);
+
             if (varname.ends_with(';'))
                 varname = varname.substr(0, varname.size() - 1);
+            std::string brackets = helper::extract_substring(varname, '[', ']');
             varname = helper::remove_substring(varname, '[', ']');
 
             line = "";
@@ -294,7 +356,7 @@ void parse_vertex_100_310(std::string& vertex_shader) {
             for (auto& _ : lines)
                 while (helper::replace(_, varname, uHash));
             lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform " + varname + " {");
-            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + "; ");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + brackets + "; ");
             lines.insert(lines.begin() + i + lineOffsetIndex++, "};\n");
 
             continue;
@@ -327,12 +389,16 @@ void parse_fragment_100_310(std::string& fragment_shader) {
         while (helper::replace(line, "lowp ", ""));
         while (helper::replace(line, "mediump ", ""));
         while (helper::replace(line, "highp ", ""));
+        while (helper::replace(line, "precision float;", ""));
+        while (helper::replace(line, "texColor.rgb(texColor.a)", "texColor.rgb * texColor.a"));
 
         line = std::regex_replace(line, std::regex(R"(\\s+)"), " ");
 
         while (helper::replace(line, "gl_FragColor", "FragColor")) {};
         while (helper::replace(line, "texture2D(", "texture(")) {};
         while (helper::replace(line, "texture2D (", "texture(")) {};
+        while (helper::replace(line, "textureCube(", "texture(")) {};
+        while (helper::replace(line, "textureCube (", "texture(")) {};
         while (helper::replace(line, " sample ", " texColor ")) {};
         while (helper::replace(line, "sample.", "texColor.")) {};
 
@@ -352,6 +418,8 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             line.find("!=") == std::string::npos &&
             line.find("+=") == std::string::npos &&
             line.find("-=") == std::string::npos &&
+            line.find("*=") == std::string::npos &&
+            line.find("/=") == std::string::npos &&
             line.find(">=") == std::string::npos &&
             line.find("<=") == std::string::npos)
         {
@@ -378,41 +446,65 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             continue;
         }
 
-        if (line.starts_with("#ifdef GL_ES")) {
+        //if (line.starts_with("#ifdef GL_ES")) {
 
-            for (int d = i; d < lines.size(); d++) {
-                if (lines[d].starts_with("#endif")) {
-                    lines[d] = "";
-                    break;
-                }
-                if (lines[d].starts_with("#else"))
-                {
-                    lines[d] = "";
+        //    for (int d = i; d < lines.size(); d++) {
+        //        if (lines[d].starts_with("#endif")) {
+        //            lines[d] = "";
+        //            break;
+        //        }
+        //        if (lines[d].starts_with("#else"))
+        //        {
+        //            lines[d] = "";
 
-                    for (int e = i; e < lines.size(); e++) {
-                        if (lines[e].starts_with("#endif")) {
-                            lines[e] = "";
-                            break;
-                        }
-                    }
-                    break;
-                }
-                lines[d] = "";
-            }
-        }
+        //            for (int e = i; e < lines.size(); e++) {
+        //                if (lines[e].starts_with("#endif")) {
+        //                    lines[e] = "";
+        //                    break;
+        //                }
+        //            }
+        //            break;
+        //        }
+        //        lines[d] = "";
+        //    }
+        //}
 
-        if (line.starts_with("#if")) {
-            line = "";
-            continue;
-        }
+        if (line.starts_with("#if") && !line.starts_with("#ifdef")) {
 
-        if (line.starts_with("#else")) {
-            line = "";
-            continue;
-        }
+            auto parseMacro = [&](std::string& m) {
+                std::string cline = m.substr(0);
 
-        if (line.starts_with("#endif")) {
-            line = "";
+                while (helper::replace(cline, "#ifdef ", ""));
+                while (helper::replace(cline, "#ifndef ", ""));
+                while (helper::replace(cline, "#if ", ""));
+                while (helper::replace(cline, "#ifdef", ""));
+                while (helper::replace(cline, "#ifndef", ""));
+                while (helper::replace(cline, "#if", ""));
+
+                std::string forbidden_chars = "<>()0123456789";
+
+                for (int i = 0; i < forbidden_chars.length(); i++)
+                    while (helper::replace(cline, forbidden_chars[i], ""));
+
+                std::string macro = cline;
+                helper::trim(macro);
+                std::string newMacro = fmt::format(" defined({}) && {}", macro, macro);
+
+                helper::replace(line, macro, newMacro);
+                while (helper::replace(line, "#ifdef", "#if"));
+                while (helper::replace(line, "#ifndef", "#if"));
+            };
+
+            std::string cline = line.substr(0);
+            while (helper::replace(cline, "&&", "$SEARCH_MACRO$"));
+            while (helper::replace(cline, "||", "$SEARCH_MACRO$"));
+
+            std::vector<std::string> columns;
+            helper::split(cline, "$SEARCH_MACRO$", columns);
+
+            for (auto& _ : columns)
+                parseMacro(_);
+
             continue;
         }
 
@@ -458,15 +550,24 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             std::string datatype = columns[1];
             std::string varname = columns[2];
 
-            if (varname.ends_with(';'))
-                varname = varname.substr(0, varname.size() - 1);
-            varname = helper::remove_substring(varname, '[', ']');
-
             if (datatype == "sampler2D" || datatype == "samplerCube") {
                 std::string index = std::to_string(locationUniform++);
-                line = fmt::format("layout (location = {}, binding = 0) uniform {} {};", index, datatype, varname);
+                line = fmt::format("layout (binding = 0) uniform {} {}", datatype, varname);
                 continue;
             }
+
+            for (int i = 3; i < columns.size(); i++) {
+                if (columns[i].find("//") != std::string::npos)
+                    break;
+                varname += fmt::format(" {} ", columns[i]);
+            }
+
+            helper::trim(varname);
+
+            if (varname.ends_with(';'))
+                varname = varname.substr(0, varname.size() - 1);
+            std::string brackets = helper::extract_substring(varname, '[', ']');
+            varname = helper::remove_substring(varname, '[', ']');
 
             line = "";
 
@@ -475,7 +576,7 @@ void parse_fragment_100_310(std::string& fragment_shader) {
             for (auto& _ : lines)
                 while (helper::replace(_, varname, uHash));
             lines.insert(lines.begin() + i + lineOffsetIndex++, "\nlayout(std140, binding = 0) uniform " + varname + " {");
-            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + "; ");
+            lines.insert(lines.begin() + i + lineOffsetIndex++, "    " + datatype + uHash + brackets + "; ");
             lines.insert(lines.begin() + i + lineOffsetIndex++, "};\n");
 
             continue;
