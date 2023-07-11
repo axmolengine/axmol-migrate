@@ -340,6 +340,7 @@ void* hLibClang = nullptr;
 namespace clang {
 	DEFINE_CLANG_FUNC(createIndex);
 	DEFINE_CLANG_FUNC(parseTranslationUnit);
+	DEFINE_CLANG_FUNC(parseTranslationUnit2);
 	DEFINE_CLANG_FUNC(getTranslationUnitCursor);
 	DEFINE_CLANG_FUNC(visitChildren);
 	DEFINE_CLANG_FUNC(getCursorSpelling);
@@ -386,6 +387,7 @@ namespace clang {
 		}
 		GET_CLANG_FUNC(createIndex);
 		GET_CLANG_FUNC(parseTranslationUnit);
+		GET_CLANG_FUNC(parseTranslationUnit2);
 		GET_CLANG_FUNC(getTranslationUnitCursor);
 		GET_CLANG_FUNC(visitChildren);
 		GET_CLANG_FUNC(getCursorSpelling);
@@ -495,13 +497,14 @@ void migrate_shader_file_one(std::string_view inpath, const std::set<std::string
 		"--std=c++17",
 	};
 	CXIndex index = clang::createIndex(0, 0);
-	CXTranslationUnit unit = clang::parseTranslationUnit(
+	CXTranslationUnit unit{};
+	auto err = clang::parseTranslationUnit2(
 		index,
 		inpath.data(), command_line_args, (int)ARRAYSIZE(command_line_args),
 		nullptr, 0,
-		CXTranslationUnit_None);
+		CXTranslationUnit_None, &unit);
 
-	if (unit)
+	if (unit && err == CXError_Success)
 	{
 		context.embedded = true;
 		CXCursor cursor = clang::getTranslationUnitCursor(unit);
@@ -587,6 +590,11 @@ void migrate_shader_file_one(std::string_view inpath, const std::set<std::string
 
 	if (context.shaderDecls.size() == 1) // single decl, use inpath
 		context.shaderDecls[0].first = inpath;
+	else if (context.shaderDecls.empty()) {
+		context.shaderDecls.emplace_back(
+			load_file(inpath),
+			inpath);
+	}
 	int hints = 0;
 	for (auto& item : context.shaderDecls) {
 		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
@@ -623,10 +631,6 @@ void migrate_shader_files_in_dir(std::string_view dir, const std::vector<std::st
 			auto pathname = path.filename();
 			auto strName = pathname.generic_string();
 
-			for (auto& filter : filterList)
-				if (cxx20::ic::ends_with(strName, filter))
-					break;
-
 			if (is_in_filter(strName, filterList))
 				fileNameSet.insert(strName);
 		}
@@ -639,10 +643,6 @@ void migrate_shader_files_in_dir(std::string_view dir, const std::vector<std::st
 			auto strPath = path.generic_string();
 			auto pathname = path.filename();
 			auto strName = pathname.generic_string();
-
-			for (auto& filter : filterList)
-				if (cxx20::ic::ends_with(strName, filter))
-					break;
 
 			if (is_in_filter(strName, filterList))
 				migrate_shader_file_one(strPath, fileNameSet);
