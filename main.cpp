@@ -660,7 +660,7 @@ int do_migrate(int argc, const char** argv)
 	printf("axmol-migrate version %s\n\n", AX_MIGRATE_VER);
 
 	if (argc < 3) {
-		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh][--use-ubo]\n\ttype: cpp, shader");
+		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh] [--use-ubo]\n\ttype: cpp, shader");
 		return -1;
 	}
 
