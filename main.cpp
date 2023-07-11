@@ -592,21 +592,23 @@ void migrate_shader_file_one(std::string_view inpath, const std::set<std::string
 		context.shaderDecls[0].first = inpath;
 	else if (context.shaderDecls.empty()) {
 		context.shaderDecls.emplace_back(
-			load_file(inpath),
-			inpath);
+			inpath,
+			load_file(inpath));
 	}
 	int hints = 0;
 	for (auto& item : context.shaderDecls) {
-		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 		auto& shader = item.second;
 		if (g_use_ubo) {
+			auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 			hints += migrate_shader_source_one_ast(shader, outpath);
+			fmt::println("Convert {} to 310 es done.", outpath);
 		}
 		else {
+			auto& outpath = item.first;
 			migrate_shader_source_one(shader, outpath);
+			fmt::println("Convert {} to 310 es done.", outpath);
 			++hints;
 		}
-        fmt::println("Convert {} to 310 es done.", outpath);
 	}
 	if (hints && context.shaderDecls.size() > 1)
 		stdfs::remove(inpath);
