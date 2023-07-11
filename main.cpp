@@ -36,6 +36,7 @@ namespace stdfs = std::filesystem;
 using namespace std::string_view_literals;
 
 bool g_use_fuzzy_pattern;
+bool g_use_ubo = false;
 int totals = 0;
 int replaced_totals = 0;
 std::vector<std::string_view> chunks;
@@ -473,6 +474,7 @@ void insret_define_guard(std::string& shader, size_t& insertpos, std::string_vie
 }
 
 extern void migrate_shader_source_one(std::string& shader_source, const std::string& outpath);
+extern int migrate_shader_source_one_ast(std::string& shader_source, const std::string& outpath);
 void migrate_shader_file_one(std::string_view inpath, const std::set<std::string>& fileNameSet) {
 
 #pragma region parse code file by libclang
@@ -585,132 +587,20 @@ void migrate_shader_file_one(std::string_view inpath, const std::set<std::string
 
 	if (context.shaderDecls.size() == 1) // single decl, use inpath
 		context.shaderDecls[0].first = inpath;
-
+	int hints = 0;
 	for (auto& item : context.shaderDecls) {
 		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 		auto& shader = item.second;
-		migrate_shader_source_one(shader, outpath);
-#if 0
-		std::regex verexp(R"(#version)");
-		if (!std::regex_search(shader, verexp)) {
-			std::string_view vercode = "#version 310 es\nprecision highp float;\nprecision highp int;\n"sv;
-			shader.insert(0, vercode);
-			size_t insertpos = vercode.size();
-			if (shader.find("MAX_DIRECTIONAL_LIGHT_NUM") != std::string::npos) {
-				insret_define_guard(shader, insertpos, "MAX_DIRECTIONAL_LIGHT_NUM"sv);
-			}
-			if (shader.find("MAX_POINT_LIGHT_NUM") != std::string::npos) {
-				insret_define_guard(shader, insertpos, "MAX_POINT_LIGHT_NUM"sv);
-			}
-			if (shader.find("MAX_SPOT_LIGHT_NUM") != std::string::npos) {
-				insret_define_guard(shader, insertpos, "MAX_SPOT_LIGHT_NUM"sv);
-			}
-			//if (shader.find("USE_NORMAL_MAPPING") != std::string::npos) {
-			//	insret_define_guard(shader, insertpos, "USE_NORMAL_MAPPING"sv);
-			//}
+		if (g_use_ubo) {
+			hints += migrate_shader_source_one_ast(shader, outpath);
 		}
 		else {
-			std::cout << "The shader " << inpath << " is already 310 es compatible!\n";
-			continue;
+			migrate_shader_source_one(shader, outpath);
+			++hints;
 		}
-
-		// GL_ES Macros might actually be important.
-		//std::regex exp(R"(#ifdef GL_ES([\s\S]*?)\#else)");
-		//if (std::regex_search(shader, exp)) {
-		//    shader = std::regex_replace(shader, exp, "");
-		//    while (Strings::replace(shader, "#endif", ""));
-		//}
-
-		std::regex fragexp(R"(gl_Position)");
-		bool isFragmentShader = !std::regex_search(shader, fragexp);
-
-		int layoutLocation = 0;
-		int layoutLocationOut = 0;
-
-		while (Strings::replace(shader, "attribute", fmt::format("layout (location = {}) in",
-			std::to_string(layoutLocation++))));
-		layoutLocation--;
-
-		while (Strings::replace(shader, "varying", fmt::format("layout (location = {}) {}",
-			std::to_string((isFragmentShader ? (layoutLocation++) : (layoutLocationOut++))), isFragmentShader ? "in" : "out")));
-		layoutLocation--;
-
-		while (Strings::replace(shader, "gl_FragColor", "FragColor"));
-
-		while (Strings::replace(shader, "texture2D(", "texture("));
-		while (Strings::replace(shader, "texture2D (", "texture("));
-
-		while (Strings::replace(shader, "textureCube(", "texture("));
-		while (Strings::replace(shader, "textureCube (", "texture("));
-
-		while (Strings::replace(shader, "uniform sampler2D", fmt::format("layout(location = {}, binding = 0) uniform  sampler2D", std::to_string(layoutLocation++))));
-		while (Strings::replace(shader, "uniform  sampler2D", "uniform sampler2D"));
-
-		while (Strings::replace(shader, "uniform samplerCube", fmt::format("layout(location = {}, binding = 0) uniform  samplerCube", std::to_string(layoutLocation++))));
-		while (Strings::replace(shader, "uniform  samplerCube", "uniform samplerCube"));
-
-		// The symbol sample is reserved by GLES 310
-		Strings::replace(shader, "vec4 sample = texture(", "vec4 texColor = texture(");
-		Strings::replace(shader, "= sample.a;", "= texColor.a;");
-		Strings::replace(shader, "= sample.r;", "= texColor.r;");
-
-		layoutLocation--;
-
-		if (isFragmentShader) {
-			Strings::replace(shader, "void main", fmt::format("layout (location = {}) out vec4 FragColor;\nvoid main",
-				std::to_string(layoutLocationOut++)));
-			layoutLocationOut--;
-		}
-
-		std::vector<std::string> lines;
-		Strings::split(shader, "\n", lines);
-
-		int currentUBO = 0;
-		int currentUBOBinding = 0;
-		auto sorroundUBOBlock = [&]()
-		{
-			bool isBlock = false;
-			for (int i = 0; i < lines.size(); i++) {
-				if (lines[i].starts_with("uniform ")) {
-					Strings::replace(lines[i], "uniform ", "    ");
-
-					if (!isBlock) {
-						std::string uboBlockName = "Block_" + std::to_string(currentUBO++);
-						std::string insertion = "layout(std140, binding = " + std::to_string(currentUBOBinding++) + ") uniform " + uboBlockName + " {\n";
-						lines[i].insert(0, insertion);
-						isBlock = true;
-					}
-				}
-				else if (isBlock) {
-					lines[i].insert(0, "};\n");
-					isBlock = false;
-				}
-			}
-		};
-
-		sorroundUBOBlock();
-		shader.clear();
-		for (int i = 0; i < lines.size(); i++) {
-			shader += lines[i] + "\n";
-		}
-
-#pragma region WriteFile
-
-		std::regex regex(R"(\n{3,})");
-		shader = std::regex_replace(shader, regex, "\n");
-
-		if (shader[0] == '\n') shader = shader.substr(1);
-
-		std::ofstream modified;
-		modified.open(outpath, std::ofstream::out | std::ofstream::trunc);
-		modified << shader;
-		modified.close();
-
-#pragma endregion
-#endif
         fmt::println("Convert {} to 310 es done.", outpath);
 	}
-	if (context.shaderDecls.size() > 1)
+	if (hints && context.shaderDecls.size() > 1)
 		stdfs::remove(inpath);
 }
 
@@ -770,7 +660,7 @@ int do_migrate(int argc, const char** argv)
 	printf("axmol-migrate version %s\n\n", AX_MIGRATE_VER);
 
 	if (argc < 3) {
-		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh]\ttype: cpp, shader");
+		printf("Invalid parameter, usage: axmol-migrate <type> [--fuzzy] [--for-engine]  --source-dir <source_dir> [--filters .frag;.vert;.vsh;.fsh][--use-ubo]\n\ttype: cpp, shader");
 		return -1;
 	}
 
@@ -808,6 +698,9 @@ int do_migrate(int argc, const char** argv)
 					}
 					});
 			}
+		}
+		else if (strcmp(argv[argi], "--use-ubo") == 0) {
+			g_use_ubo = true;
 		}
 	}
 

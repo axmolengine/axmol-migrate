@@ -5,7 +5,7 @@ set(target_name axmol-migrate)
 project(axmol-migrate)
 
 set(CMAKE_CXX_STANDARD 20)
-add_executable(${target_name} main.cpp shader-migrate.cpp base/posix_io.cpp)
+add_executable(${target_name} main.cpp xxhash/xxhash.c shader-migrate.cpp shader-migrate-ast.cpp base/posix_io.cpp)
 
 target_include_directories(${target_name} 
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}
