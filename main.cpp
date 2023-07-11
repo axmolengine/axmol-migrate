@@ -29,7 +29,7 @@ processing file 4: /home/vmroot/dev/axmol/tests/cpp-tests/Content/hd/extensions/
 #include <vector>
 #include "fmt/compile.h"
 
-#define AX_MIGRATE_VER "1.1.0"
+#define AX_MIGRATE_VER "1.1.1"
 
 namespace stdfs = std::filesystem;
 
@@ -598,17 +598,15 @@ void migrate_shader_file_one(std::string_view inpath, const std::set<std::string
 	int hints = 0;
 	for (auto& item : context.shaderDecls) {
 		auto& shader = item.second;
+		auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 		if (g_use_ubo) {
-			auto& outpath = migrate_strip_outpath(item.first, fileNameSet);
 			hints += migrate_shader_source_one_ast(shader, outpath);
-			fmt::println("Convert {} to 310 es done.", outpath);
 		}
 		else {
-			auto& outpath = item.first;
 			migrate_shader_source_one(shader, outpath);
-			fmt::println("Convert {} to 310 es done.", outpath);
 			++hints;
 		}
+		fmt::println("Convert {} to 310 es done.", outpath);
 	}
 	if (hints && context.shaderDecls.size() > 1)
 		stdfs::remove(inpath);
