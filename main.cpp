@@ -622,6 +622,7 @@ bool is_in_filter(std::string_view fileName, const std::vector<std::string_view>
 void migrate_shader_files_in_dir(std::string_view dir, const std::vector<std::string_view>& filterList, const char** argv) {
 	clang::load_lib(argv);
 
+	std::vector<stdfs::path> shader_files;
 	std::set<std::string> fileNameSet;
 	for (const auto& entry : stdfs::recursive_directory_iterator(dir)) {
 		const auto isDir = entry.is_directory();
@@ -631,22 +632,18 @@ void migrate_shader_files_in_dir(std::string_view dir, const std::vector<std::st
 			auto pathname = path.filename();
 			auto strName = pathname.generic_string();
 
-			if (is_in_filter(strName, filterList))
+			if (is_in_filter(strName, filterList)) {
 				fileNameSet.insert(strName);
+				shader_files.emplace_back(path);
+			}
 		}
 	}
 
-	for (const auto& entry : stdfs::recursive_directory_iterator(dir)) {
-		const auto isDir = entry.is_directory();
-		if (entry.is_regular_file()) {
-			auto& path = entry.path();
-			auto strPath = path.generic_string();
-			auto pathname = path.filename();
-			auto strName = pathname.generic_string();
-
-			if (is_in_filter(strName, filterList))
-				migrate_shader_file_one(strPath, fileNameSet);
-		}
+	for (const auto& path : shader_files) {
+		auto strPath = path.generic_string();
+		auto pathname = path.filename();
+		auto strName = pathname.generic_string();
+		migrate_shader_file_one(strPath, fileNameSet);
 	}
 }
 
