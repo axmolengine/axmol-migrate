@@ -103,11 +103,6 @@ for ($i = 0; $i -lt $nopts; ++$i) {
     }
 }
 
-if (!$bci) {
-    $optimize_flag = @('Debug', 'Release')[$is_ci]
-    $options.xb += '--config', $optimize_flag
-}
-
 if ($proj_dir) {
     $fullCmdLine += "'-d'", "'$proj_dir'"
 }
