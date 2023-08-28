@@ -2,7 +2,7 @@
 
 Migrate exist projects of cocos2d-x or older axmol to compile with latest axmol engine
 
-**please ensure your project in SCM before use use this tool**
+**NOTICE: please ensure your project in SCM before use use this tool**
 
 ## Whey needs
 
