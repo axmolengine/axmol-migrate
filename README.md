@@ -6,9 +6,9 @@ Migrate exist projects of cocos2d-x or older axmol to compile with latest axmol 
 
 ## Whey needs
 
-- axmol latest change remove `CC` prefix from sources files, so if exist projects not include `cocos2d.h` only, or include 
+- axmol 1.x latest change remove `CC` prefix from sources files, so if exist projects not include `cocos2d.h` only, or include 
 other header files of engine, you can use this tool to fast migrate your sources code includes.
-- axmol migrating `GLSL 100` to modern `ESSL 310`, this tool also support migrate exist `GLSL 100` to `ESSL 310`
+- axmol 2.0 migrating `GLSL 100` to modern `ESSL 310`, this tool also support migrate exist `GLSL 100` to `ESSL 310`
 
 ## steps
 
