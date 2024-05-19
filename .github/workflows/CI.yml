@@ -10,25 +10,21 @@ jobs:
   win32:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: build
       shell: pwsh
       run: ./build.ps1
   linux:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: build
       shell: pwsh
       run: ./build.ps1
   osx:
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup Xcode version
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '14.2'
+    - uses: actions/checkout@v4
     - name: build
       shell: pwsh
       run: ./build.ps1
