@@ -13,7 +13,7 @@ other header files of engine, you can use this tool to fast migrate your sources
 ## steps
 
 1. clone this repo
-2. just run the command `axmol` in this project root
+2. just run `build.ps1` in this project root
 3. do migrate:
     - migrate c++ code: `pwsh .\build_x64\axmol-migrate code --fuzzy --source-dir <path/to/your/project/>`
     - migrate shader file: `pwsh .\build_x64\axmol-migrate shader --source-dir <path/to/your/shaders/>`
